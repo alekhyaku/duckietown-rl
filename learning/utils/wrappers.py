@@ -39,7 +39,7 @@ class MotionBlurWrapper(Simulator):
 class ResizeWrapper(gym.ObservationWrapper):
     def __init__(self, env=None, shape=(120, 160, 3)):
         super(ResizeWrapper, self).__init__(env)
-        self.observation_space.shape = shape
+        #self.observation_space.shape = shape
         self.observation_space = spaces.Box(
             self.observation_space.low[0, 0, 0],
             self.observation_space.high[0, 0, 0],
@@ -49,9 +49,12 @@ class ResizeWrapper(gym.ObservationWrapper):
         self.shape = shape
 
     def observation(self, observation):
-        from scipy.misc import imresize
+        from skimage.transform import resize
 
-        return imresize(observation, self.shape)
+        return resize(observation, self.shape)
+    
+    def shape(self, val):
+        self.observation_space._shape = val
 
 
 class NormalizeWrapper(gym.ObservationWrapper):
