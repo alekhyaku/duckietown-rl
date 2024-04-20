@@ -83,11 +83,11 @@ class DDPGAgent:
         state_batch = torch.FloatTensor(state_batch).to(device)
         action_batch = torch.FloatTensor(action_batch).to(device)
         reward_batch = torch.FloatTensor(reward_batch).to(device)
-        next_state_batch = torch.FloatTensor(next_state_batch).to(device)
+        next_state_batch = torch.FloatTensor(next_state_batch).to(device).squeeze[0]
         done_batch = torch.FloatTensor(done_batch).to(device)
 
         print("Next state batch", next_state_batch)
-        # print("shape", next_state_batch.shape)
+        print("Next state batch shape:", next_state_batch.shape)
 
         # Compute the target Q value
         target_Q = self.critic_target(next_state_batch, self.actor_target(next_state_batch))
