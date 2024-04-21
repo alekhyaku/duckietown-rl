@@ -99,19 +99,27 @@ class DQNAgent:
 
 
     def load(self, filename, directory):
-        self.actor.load_state_dict(
-            torch.load("{}/{}_actor.pth".format(directory, filename), map_location=device)
-        )
-        self.critic.load_state_dict(
-            torch.load("{}/{}_critic.pth".format(directory, filename), map_location=device)
+        self.net.load_state_dict(
+            torch.load("{}/{}.pth".format(directory, filename), map_location=device)
         )
     
     def save(self, filename, directory):
-        print("Saving to {}/{}_[actor|critic].pth".format(directory, filename))
-        torch.save(self.actor.state_dict(), "{}/{}_actor.pth".format(directory, filename))
+        print("Saving to {}/{}.pth".format(directory, filename))
+        torch.save(self.net.state_dict(), "{}/{}.pth".format(directory, filename))
         print("Saved Actor")
-        torch.save(self.critic.state_dict(), "{}/{}_critic.pth".format(directory, filename))
-        print("Saved Critic")
+
+    def predict(self, state):
+        # Convert the state to a PyTorch tensor and add an extra dimension for the batch size
+        state = torch.tensor([state], device=device, dtype=torch.float32)
+        
+        # Pass the state through the network
+        with torch.no_grad():
+            q_values = self.net(state)
+        
+        # Choose the action with the highest Q-value
+        action = torch.argmax(q_values).item()
+        
+        return action
 
     # Sample a batch of experiences from the replay buffer and use them to train the network
     def optimize(self, batch_size):
@@ -143,7 +151,7 @@ class DQNAgent:
 
 if __name__ == "__main__":
     # Number of episodes to train for
-    num_episodes = 100
+    num_episodes = 10000
 
     # Number of steps to take in each episode
     num_steps = 500
@@ -158,33 +166,37 @@ if __name__ == "__main__":
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
     agent = DQNAgent(action_dim)
+    try:
+        for episode in range(num_episodes):
+            state = env.reset()
+            episode_reward = 0
 
-    for episode in range(num_episodes):
-        state = env.reset()
-        episode_reward = 0
+            for step in range(num_steps):
+                # Select an action
+                action = agent.select_action(state, action_dim)
 
-        for step in range(num_steps):
-            # Select an action
-            action = agent.select_action(state, action_dim)
+                # Take a step in the environment
+                next_state, reward, done, _ = env.step(action)
 
-            # Take a step in the environment
-            next_state, reward, done, _ = env.step(action)
+                # Store the experience in the replay buffer
+                agent.push_experience(state, action, reward, next_state, done)
 
-            # Store the experience in the replay buffer
-            agent.push_experience(state, action, reward, next_state, done)
+                # Update the network
+                agent.optimize(batch_size)
 
-            # Update the network
-            agent.optimize(batch_size)
+                # Update the current state and episode reward
+                state = next_state
+                episode_reward += reward
 
-            # Update the current state and episode reward
-            state = next_state
-            episode_reward += reward
+                if done:
+                    break
 
-            if done:
-                break
+            print(f"Episode {episode}: {episode_reward}")
 
-        print(f"Episode {episode}: {episode_reward}")
-
-print("Training done, about to save..")
-agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
-print("Finished saving..should return now!")
+        print("Training done, about to save..")
+        agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
+        print("Finished saving..should return now!")
+    except KeyboardInterrupt:
+        print("Training done, about to save..")
+        agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
+        print("Finished saving..should return now!")   

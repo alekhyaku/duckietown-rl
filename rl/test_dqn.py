@@ -6,17 +6,15 @@ import os
 import numpy as np
 
 # Duckietown Specific
-from dqn import DQNAgent
+from dqn import DQNAgent, DiscreteWrapper
 from learning.utils.wrappers import  ResizeWrapper
 
-# Initialize the Duckietown environment
+ # Initialize the environment and the agent
 env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)
-
-# Initialize the DDPG agent
+env = DiscreteWrapper(env)
 state_dim = np.prod(env.observation_space.shape)
-action_dim = np.prod(env.action_space.shape)
-max_action = float(env.action_space.high[0])
+action_dim = env.action_space.n
 print("Initializing the DQN agent")
 agent = DQNAgent(action_dim)
 print("Done with DQN")

@@ -38,7 +38,6 @@ class Actor(nn.Module):
         self.fc1 = nn.Linear(64 * 13 * 18, 512)  # updated input size
         self.fc2 = nn.Linear(512, action_dim)
         self.max_action = max_action
-        self.sigm = nn.Sigmoid()
 
     def forward(self, x):
         x = x.permute(0,3, 1, 2)
@@ -47,7 +46,7 @@ class Actor(nn.Module):
         x = x.contiguous().view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        x[:, 0] = self.max_action * self.sigm(x[:, 0])  # because we don't want the duckie to go backwards
+        x[:, 0] = self.max_action * torch.relu(x[:, 0])  # because we don't want the duckie to go backwards
         x[:, 1] = torch.tanh(x[:, 1])
         return x
 
@@ -193,32 +192,39 @@ if __name__ == "__main__":
     replay_buffer = ReplayBuffer(max_size=10000)
     print("Initialized bufffer")
 
-    num_episodes = 100  # number of training episodes
+    num_episodes = 200  # number of training episodes
     num_steps = 500  # number of steps per epoch
     batch_size = 8  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
     tau = 0.005  # target network update rate
+    try:
+        # Training loop
+        for episode in range(num_episodes):
+            print("Episode ", episode)
+            state = env.reset()
+            done = False
+            steps = 0
+            episode_reward = 0
+            while steps < num_steps:
+                action = agent.select_action(state)
+                next_state, reward, done, _ = env.step(action)
+                replay_buffer.push(state, next_state, action, reward, done)
+                state = next_state
+                if done:
+                    break
+                steps += 1
+                episode_reward += reward
 
-    # Training loop
-    for episode in range(num_episodes):
-        print("Episode ", episode)
-        state = env.reset()
-        done = False
-        steps = 0
-        while steps < num_steps:
-            action = agent.select_action(state)
-            next_state, reward, done, _ = env.step(action)
-            replay_buffer.push(state, next_state, action, reward, done)
-            state = next_state
-            if done:
-                break
-            steps += 1
-        
-        print("about to train agent")
-        # Train the agent
-        agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
+            print("Episode reward: ", episode_reward)
+            print("about to train agent")
+            # Train the agent
+            agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
 
 
-    print("Training done, about to save..")
-    agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
-    print("Finished saving..should return now!")
+        print("Training done, about to save..")
+        agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
+        print("Finished saving..should return now!")
+    except KeyboardInterrupt:
+        print("Training done, about to save..")
+        agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
+        print("Finished saving..should return now!")
