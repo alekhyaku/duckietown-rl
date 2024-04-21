@@ -193,9 +193,9 @@ if __name__ == "__main__":
     replay_buffer = ReplayBuffer(max_size=10000)
     print("Initialized bufffer")
 
-    num_episodes = 10  # number of training episodes
+    num_episodes = 100  # number of training episodes
     num_steps = 500  # number of steps per epoch
-    batch_size = 16  # size of the batches to sample from the replay buffer
+    batch_size = 8  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
     tau = 0.005  # target network update rate
 
