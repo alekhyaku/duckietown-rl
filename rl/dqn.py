@@ -99,11 +99,11 @@ class DQNAgent:
 
         state, action, reward, next_state, done = self.buffer.sample(batch_size)
 
-        state      = torch.FloatTensor(state)
-        next_state = torch.FloatTensor(next_state)
-        action     = torch.LongTensor(action)
-        reward     = torch.FloatTensor(reward)
-        done       = torch.FloatTensor(done)
+        state      = torch.FloatTensor(np.array(state))
+        next_state = torch.FloatTensor(np.array(next_state))
+        action     = torch.LongTensor(np.array(action))
+        reward     = torch.FloatTensor(np.array(reward))
+        done       = torch.FloatTensor(np.array(done))
 
         # Compute the Q-values for the current states and the next states
         current_q_values = self.net(state).gather(1, action.unsqueeze(1)).squeeze(1)

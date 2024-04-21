@@ -38,6 +38,7 @@ class Actor(nn.Module):
         self.fc1 = nn.Linear(64 * 13 * 18, 512)  # updated input size
         self.fc2 = nn.Linear(512, action_dim)
         self.max_action = max_action
+        self.sigm = nn.Sigmoid()
 
     def forward(self, x):
         x = x.permute(0,3, 1, 2)
@@ -45,7 +46,9 @@ class Actor(nn.Module):
         x = F.relu(self.conv2(x))
         x = x.contiguous().view(x.size(0), -1)
         x = F.relu(self.fc1(x))
-        x = self.max_action * torch.tanh(self.fc2(x))
+        x = self.fc2(x)
+        x[:, 0] = self.max_action * self.sigm(x[:, 0])  # because we don't want the duckie to go backwards
+        x[:, 1] = torch.tanh(x[:, 1])
         return x
 
 class Critic(nn.Module):
@@ -80,6 +83,7 @@ class Critic(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         
+        
         return x
 
     def feature_size(self):
@@ -108,7 +112,21 @@ class DDPG(object):
         state = torch.FloatTensor(state).unsqueeze(0)
         # state = state.view(-1, 3, 480, 640)  # assuming state is your input and the image size is 480x640
         return self.actor(state).cpu().data.numpy().flatten()
-
+    
+    def predict(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(device)
+        with torch.no_grad():
+            action = self.actor(state).cpu().data.numpy().flatten()
+        return action
+    
+    def load(self, filename, directory):
+        self.actor.load_state_dict(
+            torch.load("{}/{}_actor.pth".format(directory, filename), map_location=device)
+        )
+        self.critic.load_state_dict(
+            torch.load("{}/{}_critic.pth".format(directory, filename), map_location=device)
+        )
+    
     def train(self, replay_buffer, iterations, batch_size=100, discount=0.99, tau=0.005):
         for it in range(iterations):
             if len(replay_buffer) < batch_size:
@@ -158,48 +176,49 @@ class DDPG(object):
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(tau * param.data + (1 - tau) * target_param.data)
 
-# Initialize the Duckietown environment
-env = gym.make("Duckietown-udem1-v0")
-env = ResizeWrapper(env)
+if __name__ == "__main__":
+    # Initialize the Duckietown environment
+    env = gym.make("Duckietown-udem1-v0")
+    env = ResizeWrapper(env)
 
-# Initialize the DDPG agent
-state_dim = np.prod(env.observation_space.shape)
-action_dim = np.prod(env.action_space.shape)
-max_action = float(env.action_space.high[0])
-print("Initializing the DPPG agent")
-agent = DDPG(action_dim, max_action)
-print("Done with DDPG")
+    # Initialize the DDPG agent
+    state_dim = np.prod(env.observation_space.shape)
+    action_dim = np.prod(env.action_space.shape)
+    max_action = float(env.action_space.high[0])
+    print("Initializing the DPPG agent")
+    agent = DDPG(action_dim, max_action)
+    print("Done with DDPG")
 
-# Initialize replay buffer
-replay_buffer = ReplayBuffer(max_size=10000)
-print("Initialized bufffer")
+    # Initialize replay buffer
+    replay_buffer = ReplayBuffer(max_size=10000)
+    print("Initialized bufffer")
 
-num_episodes = 100  # number of training episodes
-num_steps = 500  # number of steps per epoch
-batch_size = 8  # size of the batches to sample from the replay buffer
-discount = 0.99  # discount factor for the cumulative reward
-tau = 0.005  # target network update rate
+    num_episodes = 10  # number of training episodes
+    num_steps = 500  # number of steps per epoch
+    batch_size = 16  # size of the batches to sample from the replay buffer
+    discount = 0.99  # discount factor for the cumulative reward
+    tau = 0.005  # target network update rate
 
-# Training loop
-for episode in range(num_episodes):
-    print("Episode ", episode)
-    state = env.reset()
-    done = False
-    steps = 0
-    while steps < num_steps:
-        action = agent.select_action(state)
-        next_state, reward, done, _ = env.step(action)
-        replay_buffer.push(state, next_state, action, reward, done)
-        state = next_state
-        if done:
-            break
-        steps += 1
-    
-    print("about to train agent")
-    # Train the agent
-    agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
+    # Training loop
+    for episode in range(num_episodes):
+        print("Episode ", episode)
+        state = env.reset()
+        done = False
+        steps = 0
+        while steps < num_steps:
+            action = agent.select_action(state)
+            next_state, reward, done, _ = env.step(action)
+            replay_buffer.push(state, next_state, action, reward, done)
+            state = next_state
+            if done:
+                break
+            steps += 1
+        
+        print("about to train agent")
+        # Train the agent
+        agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
 
 
-print("Training done, about to save..")
-agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
-print("Finished saving..should return now!")
+    print("Training done, about to save..")
+    agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
+    print("Finished saving..should return now!")
