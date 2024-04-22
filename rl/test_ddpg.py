@@ -30,6 +30,7 @@ while True:
     while not done:
         action = agent.predict(obs)
         # Perform action
+        print("action: ", action)
         obs, reward, done, _ = env.step(action)
         env.render()
     done = False

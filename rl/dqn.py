@@ -12,6 +12,8 @@ from collections import deque
 import random
 from learning.utils.wrappers import ResizeWrapper
 from gym import spaces
+import os
+import os.path
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -166,6 +168,13 @@ if __name__ == "__main__":
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
     agent = DQNAgent(action_dim)
+
+    # load previously trained model to train more
+    if os.path.exists("/home/alekhyak/gym-duckietown/rl/model/dqn.pth"):
+        agent.load("dqn", "/home/alekhyak/gym-duckietown/rl/model")
+        print("loaded agent")
+
+    # we want to catch keyboard interrupts to save the model
     try:
         for episode in range(num_episodes):
             state = env.reset()
@@ -192,6 +201,10 @@ if __name__ == "__main__":
                     break
 
             print(f"Episode {episode}: {episode_reward}")
+            if episode % 10 == 0:
+                print("10 episodes done, saving model")
+                agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
+                print("Finished saving, back to work...")
 
         print("Training done, about to save..")
         agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")

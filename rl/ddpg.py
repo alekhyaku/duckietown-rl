@@ -10,6 +10,7 @@ import gym_duckietown
 import gym
 from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, DtRewardWrapper, ActionWrapper, ResizeWrapper
 import os
+import os.path
 
 
 # Define the device
@@ -38,6 +39,7 @@ class Actor(nn.Module):
         self.fc1 = nn.Linear(64 * 13 * 18, 512)  # updated input size
         self.fc2 = nn.Linear(512, action_dim)
         self.max_action = max_action
+        self.sigm = nn.Sigmoid()
 
     def forward(self, x):
         x = x.permute(0,3, 1, 2)
@@ -46,8 +48,13 @@ class Actor(nn.Module):
         x = x.contiguous().view(x.size(0), -1)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
-        x[:, 0] = self.max_action * torch.relu(x[:, 0])  # because we don't want the duckie to go backwards
-        x[:, 1] = torch.tanh(x[:, 1])
+        # print("Action before it gets clipped: ", x)
+        # relu_val = self.sigm(abs(x[:, 0]))
+        # print("Relu val: ", relu_val)
+        x0 = self.max_action * self.sigm(abs(x[:, 0]))
+        x1 = torch.tanh(x[:, 1])
+        x = torch.stack((x0, x1), dim=1)
+        # print("Action in forward: ", x)
         return x
 
 class Critic(nn.Module):
@@ -73,7 +80,7 @@ class Critic(nn.Module):
         # Flatten the output from conv layers
         x = x.contiguous().view(x.size(0), -1)
         
-        print("Shape in forward", x.shape)
+        # print("Shape in forward", x.shape)
         # Concatenate the action to the feature vector
         x = torch.cat([x, action.squeeze(1)], 1)
         
@@ -109,6 +116,7 @@ class DDPG(object):
 
     def select_action(self, state):
         state = torch.FloatTensor(state).unsqueeze(0)
+        # print("State ", state)
         # state = state.view(-1, 3, 480, 640)  # assuming state is your input and the image size is 480x640
         return self.actor(state).cpu().data.numpy().flatten()
     
@@ -142,8 +150,9 @@ class DDPG(object):
             done = torch.FloatTensor(np.array(1 - np.array(d))).to(device)
             reward = torch.FloatTensor(np.array(r)).to(device)
 
-            print("State Shape", state.shape)
-            print("Action Shape", action.shape)
+            # print("Action in train, ", action)
+            # print("State Shape", state.shape)
+            # print("Action Shape", action.shape)
             # Compute the target Q value
             target_Q = self.critic_target(next_state, self.actor_target(next_state))
             target_Q = target_Q.view(-1, 1)  # Ensure target_Q has shape [64, 1]
@@ -184,15 +193,19 @@ if __name__ == "__main__":
     state_dim = np.prod(env.observation_space.shape)
     action_dim = np.prod(env.action_space.shape)
     max_action = float(env.action_space.high[0])
+    # print("max action ", max_action)
     print("Initializing the DPPG agent")
     agent = DDPG(action_dim, max_action)
+    if os.path.isfile("/home/alekhyak/gym-duckietown/rl/model/ddpg_actor.pth"):
+        print("Loading model")
+        agent.load(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model/")
     print("Done with DDPG")
 
     # Initialize replay buffer
     replay_buffer = ReplayBuffer(max_size=10000)
     print("Initialized bufffer")
 
-    num_episodes = 200  # number of training episodes
+    num_episodes = 1000  # number of training episodes
     num_steps = 500  # number of steps per epoch
     batch_size = 8  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
@@ -207,6 +220,7 @@ if __name__ == "__main__":
             episode_reward = 0
             while steps < num_steps:
                 action = agent.select_action(state)
+                # print("Action in episode step ", steps, " : ", action)
                 next_state, reward, done, _ = env.step(action)
                 replay_buffer.push(state, next_state, action, reward, done)
                 state = next_state
@@ -214,17 +228,22 @@ if __name__ == "__main__":
                     break
                 steps += 1
                 episode_reward += reward
+                # env.render()
 
             print("Episode reward: ", episode_reward)
             print("about to train agent")
             # Train the agent
             agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
-
+            # save the policy every ten eipsodes in case something crashes
+            if episode%10 == 0:
+                print("Episode %10 done, about to save.. : ", episode)
+                agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
+                print("Finished saving..back to work")
 
         print("Training done, about to save..")
         agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
         print("Finished saving..should return now!")
     except KeyboardInterrupt:
-        print("Training done, about to save..")
-        agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
+        print("Training interrupted, about to save..")
+        agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
         print("Finished saving..should return now!")
