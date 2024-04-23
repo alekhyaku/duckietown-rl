@@ -15,7 +15,7 @@ env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)
 env = DiscreteWrapper(env)
 env = NormalizeWrapper(env)
-env = DuckieRewardWrapper(env)
+env = DuckieRewardWrapper(env, 1)
 env.seed(0)
 state_dim = np.prod(env.observation_space.shape)
 action_dim = env.action_space.n

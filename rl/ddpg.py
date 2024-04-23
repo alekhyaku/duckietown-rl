@@ -10,21 +10,21 @@ import gym_duckietown
 import gym
 from gym import spaces
 from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, ActionWrapper, ResizeWrapper
+from learning.utils.env import launch_env
 import os
 import os.path
 import csv
 
 class DuckieRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env):
+    def __init__(self, env, crash_coef):
         super(DuckieRewardWrapper, self).__init__(env)
+        self.crash_coef = crash_coef
 
     def reward(self, reward):
         if reward == -1000:
-            reward = -100
-        # elif reward > 0:
-        #     reward += 10
-        # else:
-        #     reward -= 1
+            reward = -10*self.crash_coef
+        else:
+            reward *= .5
         return reward
 
 # Define the device
@@ -120,7 +120,7 @@ class Critic(nn.Module):
         return self.conv3(self.conv2(self.conv1(torch.zeros(1, 3, 120, 160)))).view(1, -1).size(1)
 
 class DDPG(object):
-    def __init__(self, action_dim, max_action, action_space, noise_std_dev=0.35, noise_decay=0.99):
+    def __init__(self, action_dim, max_action, action_space, noise_std_dev=0.3, noise_decay=0.75):
         self.actor = Actor(action_dim, max_action)
         self.actor_target = Actor(action_dim, max_action)
         self.actor_target.load_state_dict(self.actor.state_dict())
@@ -147,10 +147,11 @@ class DDPG(object):
         action= self.actor(state).cpu().data.numpy().flatten()
         # Add noise to the action
         noise = np.random.normal(0, self.noise_std_dev, size=action.shape)
+        print("Noise: ", noise)
         action = action + noise
 
         # Clip the action to be within the valid range
-        action = np.clip(action, 0, self.action_space.high)
+        action = np.clip(action, self.action_space.low, self.action_space.high)
 
         # # Decay the noise standard deviation
         # self.noise_std_dev *= self.noise_decay
@@ -205,8 +206,8 @@ class DDPG(object):
             # Get current Q estimate
             current_Q = self.critic(state, action)
 
-            print("Target Q: ", target_Q)
-            print("Current Q: ", current_Q)
+            # print("Target Q: ", target_Q)
+            # print("Current Q: ", current_Q)
             
             # Compute critic loss
             critic_loss = F.mse_loss(current_Q, target_Q)
@@ -236,8 +237,8 @@ class DDPG(object):
 if __name__ == "__main__":
     # Initialize the Duckietown environment
     env = gym.make("Duckietown-udem1-v0")
+    # env = launch_env()
     env = ResizeWrapper(env)
-    env = DuckieRewardWrapper(env)
     env = NormalizeWrapper(env)
     env.seed(0)
 
@@ -259,12 +260,15 @@ if __name__ == "__main__":
 
     num_episodes = 400  # number of training episodes
     num_steps = 1000  # number of steps per epoch
-    batch_size = 8  # size of the batches to sample from the replay buffer
+    batch_size = 16  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
     tau = 0.005  # target network update rate
     try:
         # Training loop
         for episode in range(num_episodes):
+            agent.noise_std_dev = 0.3
+            crash_coef = 25
+            env = DuckieRewardWrapper(env, crash_coef)
             print("Episode ", episode)
             state = env.reset()
             env.seed(0)
@@ -277,9 +281,12 @@ if __name__ == "__main__":
                 next_state, reward, done, _ = env.step(action)
                 replay_buffer.push(state, next_state, action, reward, done)
                 state = next_state
+                if steps%75 == 0:
+                    agent.noise_std_dev *= agent.noise_decay
                 # Decay the noise standard deviation every five steps
-                # if steps % 5 == 0:
-                #     agent.noise_std_dev *= agent.noise_decay    
+                if steps % 30 == 0:
+                    crash_coef *= .50
+                    env = DuckieRewardWrapper(env, crash_coef)
                 steps += 1
                 episode_reward += reward
                 # print("Reward at step ", steps, " : ", reward)
@@ -292,8 +299,7 @@ if __name__ == "__main__":
             print("about to train agent")
             # Train the agent
             agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
-            if episode%50 == 0:
-                agent.noise_std_dev *= agent.noise_decay
+            
             # save the policy every ten eipsodes in case something crashes
             if episode%10 == 0:
                 print("Episode %10 done, about to save.. : ", episode)
