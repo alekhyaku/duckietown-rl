@@ -6,12 +6,15 @@ import os
 import numpy as np
 
 # Duckietown Specific
-from ddpg import DDPG
-from learning.utils.wrappers import  ResizeWrapper
+from ddpg import DDPG, DuckieRewardWrapper
+from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 
 # Initialize the Duckietown environment
 env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)
+env = NormalizeWrapper(env)
+env = DuckieRewardWrapper(env)
+env.seed(0)
 
 # Initialize the DDPG agent
 state_dim = np.prod(env.observation_space.shape)
@@ -24,15 +27,17 @@ print("Done with DDPG")
 agent.load(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model/")
 
 obs = env.reset()
+env.seed(0)
 done = False
 
 while True:
     while not done:
-        action = agent.predict(obs)
+        action = agent.select_action(obs)
         # Perform action
         print("action: ", action)
         obs, reward, done, _ = env.step(action)
         env.render()
     done = False
     obs = env.reset()
+    env.seed(0)
 

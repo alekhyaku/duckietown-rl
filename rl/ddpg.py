@@ -8,10 +8,24 @@ import random
 import numpy as np
 import gym_duckietown
 import gym
-from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, DtRewardWrapper, ActionWrapper, ResizeWrapper
+from gym import spaces
+from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, ActionWrapper, ResizeWrapper
 import os
 import os.path
+import csv
 
+class DuckieRewardWrapper(gym.RewardWrapper):
+    def __init__(self, env):
+        super(DuckieRewardWrapper, self).__init__(env)
+
+    def reward(self, reward):
+        if reward == -1000:
+            reward = -100
+        # elif reward > 0:
+        #     reward += 10
+        # else:
+        #     reward -= 1
+        return reward
 
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -54,7 +68,11 @@ class Actor(nn.Module):
         x0 = self.max_action * self.sigm(abs(x[:, 0]))
         x1 = torch.tanh(x[:, 1])
         x = torch.stack((x0, x1), dim=1)
-        # print("Action in forward: ", x)
+        # print("Action in actor forward: ", x)
+        if x.shape[0] == 1:
+            x = x.squeeze(0)
+        # print("Action in actor after squeeze forward: ", x)
+        # print("Action shape in actor forward: ", x.shape)
         return x
 
 class Critic(nn.Module):
@@ -77,18 +95,24 @@ class Critic(nn.Module):
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
         
+        # print("Shape in forward", x.shape)
         # Flatten the output from conv layers
         x = x.contiguous().view(x.size(0), -1)
         
         # print("Shape in forward", x.shape)
+        # print("ACtion shape in forward", action.shape)
+        # print("Action in critic forward: ", action)
         # Concatenate the action to the feature vector
-        x = torch.cat([x, action.squeeze(1)], 1)
+        if action.shape[1] == 1:
+            action = action.squeeze(1)
+        x = torch.cat([x, action], 1)
         
         # Pass the result through the fully connected layers
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         
+        # print("Final Critic value: ", x)
         
         return x
 
@@ -96,7 +120,7 @@ class Critic(nn.Module):
         return self.conv3(self.conv2(self.conv1(torch.zeros(1, 3, 120, 160)))).view(1, -1).size(1)
 
 class DDPG(object):
-    def __init__(self, action_dim, max_action):
+    def __init__(self, action_dim, max_action, action_space, noise_std_dev=0.35, noise_decay=0.99):
         self.actor = Actor(action_dim, max_action)
         self.actor_target = Actor(action_dim, max_action)
         self.actor_target.load_state_dict(self.actor.state_dict())
@@ -106,7 +130,11 @@ class DDPG(object):
         self.critic_target = Critic(action_dim)
         self.critic_target.load_state_dict(self.critic.state_dict())
         self.critic_optimizer = optim.Adam(self.critic.parameters())
-    
+
+        self.noise_std_dev = noise_std_dev
+        self.noise_decay = noise_decay   
+        self.action_space = action_space
+
     def save(self, filename, directory):
         print("Saving to {}/{}_[actor|critic].pth".format(directory, filename))
         torch.save(self.actor.state_dict(), "{}/{}_actor.pth".format(directory, filename))
@@ -116,9 +144,20 @@ class DDPG(object):
 
     def select_action(self, state):
         state = torch.FloatTensor(state).unsqueeze(0)
+        action= self.actor(state).cpu().data.numpy().flatten()
+        # Add noise to the action
+        noise = np.random.normal(0, self.noise_std_dev, size=action.shape)
+        action = action + noise
+
+        # Clip the action to be within the valid range
+        action = np.clip(action, 0, self.action_space.high)
+
+        # # Decay the noise standard deviation
+        # self.noise_std_dev *= self.noise_decay
         # print("State ", state)
         # state = state.view(-1, 3, 480, 640)  # assuming state is your input and the image size is 480x640
-        return self.actor(state).cpu().data.numpy().flatten()
+        print("Action in select action: ", action)
+        return action
     
     def predict(self, state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
@@ -126,6 +165,11 @@ class DDPG(object):
             action = self.actor(state).cpu().data.numpy().flatten()
         return action
     
+    def save_rewards(self, reward, filename, directory):
+        with open("{}/{}.csv".format(directory, filename), "a") as f:
+            writer = csv.writer(f)
+            writer.writerow([reward])
+
     def load(self, filename, directory):
         self.actor.load_state_dict(
             torch.load("{}/{}_actor.pth".format(directory, filename), map_location=device)
@@ -152,17 +196,21 @@ class DDPG(object):
 
             # print("Action in train, ", action)
             # print("State Shape", state.shape)
-            # print("Action Shape", action.shape)
+            # print("Action before critic Shape", action.shape)
             # Compute the target Q value
             target_Q = self.critic_target(next_state, self.actor_target(next_state))
-            target_Q = target_Q.view(-1, 1)  # Ensure target_Q has shape [64, 1]
-            target_Q = reward + (done * discount * target_Q).detach()
-
+            target_Q = target_Q.view(-1, 1)  # Ensure target_Q has shape [64, 1]      
+            target_Q = reward.unsqueeze(1) + (done.unsqueeze(1) * discount * target_Q).detach()
+            
             # Get current Q estimate
             current_Q = self.critic(state, action)
 
+            print("Target Q: ", target_Q)
+            print("Current Q: ", current_Q)
+            
             # Compute critic loss
             critic_loss = F.mse_loss(current_Q, target_Q)
+            # print("Critic loss: ", critic_loss)
 
             # Optimize the critic
             self.critic_optimizer.zero_grad()
@@ -171,6 +219,7 @@ class DDPG(object):
 
             # Compute actor loss
             actor_loss = -self.critic(state, self.actor(state)).mean()
+            # print("Actor loss: ", actor_loss)
 
             # Optimize the actor
             self.actor_optimizer.zero_grad()
@@ -188,6 +237,9 @@ if __name__ == "__main__":
     # Initialize the Duckietown environment
     env = gym.make("Duckietown-udem1-v0")
     env = ResizeWrapper(env)
+    env = DuckieRewardWrapper(env)
+    env = NormalizeWrapper(env)
+    env.seed(0)
 
     # Initialize the DDPG agent
     state_dim = np.prod(env.observation_space.shape)
@@ -195,7 +247,7 @@ if __name__ == "__main__":
     max_action = float(env.action_space.high[0])
     # print("max action ", max_action)
     print("Initializing the DPPG agent")
-    agent = DDPG(action_dim, max_action)
+    agent = DDPG(action_dim, max_action, action_space=env.action_space)
     if os.path.isfile("/home/alekhyak/gym-duckietown/rl/model/ddpg_actor.pth"):
         print("Loading model")
         agent.load(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model/")
@@ -205,8 +257,8 @@ if __name__ == "__main__":
     replay_buffer = ReplayBuffer(max_size=10000)
     print("Initialized bufffer")
 
-    num_episodes = 1000  # number of training episodes
-    num_steps = 500  # number of steps per epoch
+    num_episodes = 400  # number of training episodes
+    num_steps = 1000  # number of steps per epoch
     batch_size = 8  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
     tau = 0.005  # target network update rate
@@ -215,6 +267,7 @@ if __name__ == "__main__":
         for episode in range(num_episodes):
             print("Episode ", episode)
             state = env.reset()
+            env.seed(0)
             done = False
             steps = 0
             episode_reward = 0
@@ -224,16 +277,23 @@ if __name__ == "__main__":
                 next_state, reward, done, _ = env.step(action)
                 replay_buffer.push(state, next_state, action, reward, done)
                 state = next_state
-                if done:
-                    break
+                # Decay the noise standard deviation every five steps
+                # if steps % 5 == 0:
+                #     agent.noise_std_dev *= agent.noise_decay    
                 steps += 1
                 episode_reward += reward
-                # env.render()
+                # print("Reward at step ", steps, " : ", reward)
+                env.render()
+                if done:
+                    break
 
+            agent.save_rewards(episode_reward, "ddpg", "/home/alekhyak/gym-duckietown/rl/rewards")
             print("Episode reward: ", episode_reward)
             print("about to train agent")
             # Train the agent
             agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
+            if episode%50 == 0:
+                agent.noise_std_dev *= agent.noise_decay
             # save the policy every ten eipsodes in case something crashes
             if episode%10 == 0:
                 print("Episode %10 done, about to save.. : ", episode)

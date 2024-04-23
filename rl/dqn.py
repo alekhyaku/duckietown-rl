@@ -10,10 +10,12 @@ import gym_duckietown
 import gym
 from collections import deque
 import random
-from learning.utils.wrappers import ResizeWrapper
+from learning.utils.wrappers import ResizeWrapper, NormalizeWrapper
 from gym import spaces
 import os
 import os.path
+import csv
+from ddpg import DuckieRewardWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -99,6 +101,10 @@ class DQNAgent:
     def push_experience(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
 
+    def save_reward(save, filename, directory, reward):
+        with open("{}/{}.csv".format(directory, filename), "a") as f:
+            writer = csv.writer(f)
+            writer.writerow([reward])
 
     def load(self, filename, directory):
         self.net.load_state_dict(
@@ -153,7 +159,7 @@ class DQNAgent:
 
 if __name__ == "__main__":
     # Number of episodes to train for
-    num_episodes = 10000
+    num_episodes = 200
 
     # Number of steps to take in each episode
     num_steps = 500
@@ -165,6 +171,9 @@ if __name__ == "__main__":
     env = gym.make("Duckietown-udem1-v0")
     env = ResizeWrapper(env)
     env = DiscreteWrapper(env)
+    env = NormalizeWrapper(env)
+    env = DuckieRewardWrapper(env)
+    env.seed(0)
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
     agent = DQNAgent(action_dim)
@@ -178,6 +187,7 @@ if __name__ == "__main__":
     try:
         for episode in range(num_episodes):
             state = env.reset()
+            env.seed(0)
             episode_reward = 0
 
             for step in range(num_steps):
@@ -196,11 +206,12 @@ if __name__ == "__main__":
                 # Update the current state and episode reward
                 state = next_state
                 episode_reward += reward
-
+                # env.render()
                 if done:
                     break
 
             print(f"Episode {episode}: {episode_reward}")
+            agent.save_reward("dqn", "/home/alekhyak/gym-duckietown/rl/rewards", episode_reward)
             if episode % 10 == 0:
                 print("10 episodes done, saving model")
                 agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")

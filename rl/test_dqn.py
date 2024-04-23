@@ -7,12 +7,16 @@ import numpy as np
 
 # Duckietown Specific
 from dqn import DQNAgent, DiscreteWrapper
-from learning.utils.wrappers import  ResizeWrapper
+from ddpg import DuckieRewardWrapper
+from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 
  # Initialize the environment and the agent
 env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)
 env = DiscreteWrapper(env)
+env = NormalizeWrapper(env)
+env = DuckieRewardWrapper(env)
+env.seed(0)
 state_dim = np.prod(env.observation_space.shape)
 action_dim = env.action_space.n
 print("Initializing the DQN agent")
@@ -22,6 +26,7 @@ print("Done with DQN")
 agent.load(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model/")
 
 obs = env.reset()
+env.seed(0)
 done = False
 
 while True:
@@ -32,4 +37,5 @@ while True:
         env.render()
     done = False
     obs = env.reset()
+    env.seed(0)
 
