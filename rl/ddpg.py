@@ -14,6 +14,7 @@ from learning.utils.env import launch_env
 import os
 import os.path
 import csv
+from gym.spaces import Box
 
 class DuckieRewardWrapper(gym.RewardWrapper):
     def __init__(self, env, crash_coef):
@@ -22,9 +23,9 @@ class DuckieRewardWrapper(gym.RewardWrapper):
 
     def reward(self, reward):
         if reward == -1000:
-            reward = -10*self.crash_coef
-        else:
-            reward *= .5
+            reward = -25*self.crash_coef
+        elif reward < 0:
+            reward *= .25
         return reward
 
 # Define the device
@@ -49,30 +50,40 @@ class Actor(nn.Module):
     def __init__(self, action_dim, max_action):
         super(Actor, self).__init__()
         self.conv1 = nn.Conv2d(3, 32, kernel_size=8, stride=4)
+        self.bn1 = nn.BatchNorm2d(32)  # Add batch normalization after conv1
+
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
+        self.bn2 = nn.BatchNorm2d(64)  # Add batch normalization after conv2
+
         self.fc1 = nn.Linear(64 * 13 * 18, 512)  # updated input size
+
         self.fc2 = nn.Linear(512, action_dim)
+
         self.max_action = max_action
+
         self.sigm = nn.Sigmoid()
+
+        self.dropout = nn.Dropout(p=0.2)
 
     def forward(self, x):
         x = x.permute(0,3, 1, 2)
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = self.dropout(x)
+
         x = x.contiguous().view(x.size(0), -1)
+
         x = F.relu(self.fc1(x))
+        x = self.dropout(x)
         x = self.fc2(x)
-        # print("Action before it gets clipped: ", x)
-        # relu_val = self.sigm(abs(x[:, 0]))
-        # print("Relu val: ", relu_val)
+
         x0 = self.max_action * self.sigm(abs(x[:, 0]))
         x1 = torch.tanh(x[:, 1])
         x = torch.stack((x0, x1), dim=1)
-        # print("Action in actor forward: ", x)
+
         if x.shape[0] == 1:
             x = x.squeeze(0)
-        # print("Action in actor after squeeze forward: ", x)
-        # print("Action shape in actor forward: ", x.shape)
+
         return x
 
 class Critic(nn.Module):
@@ -80,8 +91,11 @@ class Critic(nn.Module):
         super(Critic, self).__init__()
         # Convolutional layers
         self.conv1 = nn.Conv2d(3, 32, kernel_size=5, stride=2)
+        self.bn1 = nn.BatchNorm2d(32)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2)
+        self.bn2 = nn.BatchNorm2d(64)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2)
+        self.bn3 = nn.BatchNorm2d(128)
         
         # Fully connected layers
         self.fc1 = nn.Linear(self.feature_size() + action_dim, 400)
@@ -91,17 +105,13 @@ class Critic(nn.Module):
     def forward(self, state, action):
         state = state.permute(0,3, 1, 2)
         # Pass state through convolutional layers
-        x = F.relu(self.conv1(state))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.relu(self.bn1(self.conv1(state)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
         
-        # print("Shape in forward", x.shape)
         # Flatten the output from conv layers
         x = x.contiguous().view(x.size(0), -1)
         
-        # print("Shape in forward", x.shape)
-        # print("ACtion shape in forward", action.shape)
-        # print("Action in critic forward: ", action)
         # Concatenate the action to the feature vector
         if action.shape[1] == 1:
             action = action.squeeze(1)
@@ -112,24 +122,22 @@ class Critic(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         
-        # print("Final Critic value: ", x)
-        
         return x
 
     def feature_size(self):
         return self.conv3(self.conv2(self.conv1(torch.zeros(1, 3, 120, 160)))).view(1, -1).size(1)
 
 class DDPG(object):
-    def __init__(self, action_dim, max_action, action_space, noise_std_dev=0.3, noise_decay=0.75):
+    def __init__(self, action_dim, max_action, action_space, actor_learning_rate=0.00001, critic_learning_rate=0.0001, noise_std_dev=0.3, noise_decay=0.70):
         self.actor = Actor(action_dim, max_action)
         self.actor_target = Actor(action_dim, max_action)
         self.actor_target.load_state_dict(self.actor.state_dict())
-        self.actor_optimizer = optim.Adam(self.actor.parameters())
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_learning_rate)
 
         self.critic = Critic(action_dim)
         self.critic_target = Critic(action_dim)
         self.critic_target.load_state_dict(self.critic.state_dict())
-        self.critic_optimizer = optim.Adam(self.critic.parameters())
+        self.critic_optimizer = optim.Adam(self.critic.parameters(), lr=critic_learning_rate)
 
         self.noise_std_dev = noise_std_dev
         self.noise_decay = noise_decay   
@@ -142,22 +150,29 @@ class DDPG(object):
         torch.save(self.critic.state_dict(), "{}/{}_critic.pth".format(directory, filename))
         print("Saved Critic")
 
-    def select_action(self, state):
-        state = torch.FloatTensor(state).unsqueeze(0)
-        action= self.actor(state).cpu().data.numpy().flatten()
-        # Add noise to the action
-        noise = np.random.normal(0, self.noise_std_dev, size=action.shape)
-        print("Noise: ", noise)
-        action = action + noise
+    def select_action(self, state, rand):
+        if rand:
+            # Define the custom action space
+            custom_action_space = Box(low=np.array([0, -1]), high=np.array([0.8, 1]), dtype=np.float32)
 
-        # Clip the action to be within the valid range
-        action = np.clip(action, self.action_space.low, self.action_space.high)
+            # Sample from the custom action space
+            action = custom_action_space.sample()
+        else:
+            state = torch.FloatTensor(state).unsqueeze(0)
+            action= self.actor(state).cpu().data.numpy().flatten()
+            # Add noise to the action
+            noise = np.random.normal(0, self.noise_std_dev, size=action.shape)
+            print("Noise: ", noise)
+            action = action + noise
 
-        # # Decay the noise standard deviation
-        # self.noise_std_dev *= self.noise_decay
-        # print("State ", state)
-        # state = state.view(-1, 3, 480, 640)  # assuming state is your input and the image size is 480x640
-        print("Action in select action: ", action)
+            #define low and high for each part of our action space
+            action_space_low = np.array([0, -1])
+            action_space_high= np.array([0.8, 1])
+
+            # Clip the action to be within the valid range
+            action = np.clip(action, action_space_low, action_space_high)
+
+            print("Action in select action: ", action)
         return action
     
     def predict(self, state):
@@ -166,10 +181,25 @@ class DDPG(object):
             action = self.actor(state).cpu().data.numpy().flatten()
         return action
     
-    def save_rewards(self, reward, filename, directory):
+    def save_reward(save, filename, directory, reward):
         with open("{}/{}.csv".format(directory, filename), "a") as f:
             writer = csv.writer(f)
             writer.writerow([reward])
+    
+    def save_all(self, episode, step, action, reward, filename, directory):
+        # Check if the file exists
+        file_path = "{}/{}.csv".format(directory, filename)
+        file_exists = os.path.isfile(file_path)
+        with open(file_path,'a', newline='') as csvfile:
+            # Create a CSV writer
+            writer = csv.writer(csvfile)
+
+            # If the file didn't exist, write the header row
+            if not file_exists:
+                writer.writerow(['Episode', 'Step', 'Action', 'Reward'])
+
+            # Write a new row to the CSV file
+            writer.writerow([episode, step, state, action, reward])
 
     def load(self, filename, directory):
         self.actor.load_state_dict(
@@ -185,9 +215,6 @@ class DDPG(object):
                 return
             # Sample replay buffer
             x, y, u, r, d = replay_buffer.sample(batch_size)
-            # print("D: ", d)
-            # print("State ", x)
-            # print("Action ", u)
             
             state = torch.FloatTensor(np.array(x)).to(device)
             action = torch.FloatTensor(np.array(u)).to(device)
@@ -195,9 +222,6 @@ class DDPG(object):
             done = torch.FloatTensor(np.array(1 - np.array(d))).to(device)
             reward = torch.FloatTensor(np.array(r)).to(device)
 
-            # print("Action in train, ", action)
-            # print("State Shape", state.shape)
-            # print("Action before critic Shape", action.shape)
             # Compute the target Q value
             target_Q = self.critic_target(next_state, self.actor_target(next_state))
             target_Q = target_Q.view(-1, 1)  # Ensure target_Q has shape [64, 1]      
@@ -205,13 +229,9 @@ class DDPG(object):
             
             # Get current Q estimate
             current_Q = self.critic(state, action)
-
-            # print("Target Q: ", target_Q)
-            # print("Current Q: ", current_Q)
             
             # Compute critic loss
             critic_loss = F.mse_loss(current_Q, target_Q)
-            # print("Critic loss: ", critic_loss)
 
             # Optimize the critic
             self.critic_optimizer.zero_grad()
@@ -220,8 +240,7 @@ class DDPG(object):
 
             # Compute actor loss
             actor_loss = -self.critic(state, self.actor(state)).mean()
-            # print("Actor loss: ", actor_loss)
-
+            
             # Optimize the actor
             self.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -236,19 +255,23 @@ class DDPG(object):
 
 if __name__ == "__main__":
     # Initialize the Duckietown environment
-    env = gym.make("Duckietown-udem1-v0")
+    env = gym.make("Duckietown-zigzag_dists")
     # env = launch_env()
     env = ResizeWrapper(env)
     env = NormalizeWrapper(env)
-    env.seed(0)
+    env = ActionWrapper(env)
+
+    crash_coef = 25
+    env = DuckieRewardWrapper(env, crash_coef)
 
     # Initialize the DDPG agent
     state_dim = np.prod(env.observation_space.shape)
     action_dim = np.prod(env.action_space.shape)
     max_action = float(env.action_space.high[0])
-    # print("max action ", max_action)
+
     print("Initializing the DPPG agent")
     agent = DDPG(action_dim, max_action, action_space=env.action_space)
+
     if os.path.isfile("/home/alekhyak/gym-duckietown/rl/model/ddpg_actor.pth"):
         print("Loading model")
         agent.load(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model/")
@@ -258,49 +281,57 @@ if __name__ == "__main__":
     replay_buffer = ReplayBuffer(max_size=10000)
     print("Initialized bufffer")
 
-    num_episodes = 400  # number of training episodes
+    num_episodes = 1000  # number of training episodes
     num_steps = 1000  # number of steps per epoch
     batch_size = 16  # size of the batches to sample from the replay buffer
     discount = 0.99  # discount factor for the cumulative reward
     tau = 0.005  # target network update rate
+    num_rand_episodes = 20
+    agent.noise_std_dev = 0.3
     try:
         # Training loop
         for episode in range(num_episodes):
-            agent.noise_std_dev = 0.3
-            crash_coef = 25
-            env = DuckieRewardWrapper(env, crash_coef)
+            env.crash_coef = 25
             print("Episode ", episode)
             state = env.reset()
-            env.seed(0)
             done = False
-            steps = 0
             episode_reward = 0
-            while steps < num_steps:
-                action = agent.select_action(state)
+            for steps in range(num_steps):
+                # if episode < num_rand_episodes:
+                #     action = agent.select_action(state, True)
+                # else:
+                action = agent.select_action(state, False)
                 # print("Action in episode step ", steps, " : ", action)
                 next_state, reward, done, _ = env.step(action)
+                print("reward: ", reward)
+                    # Write a new row to the CSV file
+                agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/rewards")
                 replay_buffer.push(state, next_state, action, reward, done)
                 state = next_state
-                if steps%75 == 0:
-                    agent.noise_std_dev *= agent.noise_decay
-                # Decay the noise standard deviation every five steps
+                
+                # Decay the noise standard deviation every thirty steps
                 if steps % 30 == 0:
-                    crash_coef *= .50
-                    env = DuckieRewardWrapper(env, crash_coef)
-                steps += 1
+                    if env.crash_coef > 1:
+                        env.crash_coef *= .50
+
                 episode_reward += reward
-                # print("Reward at step ", steps, " : ", reward)
+                
                 env.render()
                 if done:
                     break
 
-            agent.save_rewards(episode_reward, "ddpg", "/home/alekhyak/gym-duckietown/rl/rewards")
+            
             print("Episode reward: ", episode_reward)
+            agent.save_reward("ddpg", "/home/alekhyak/gym-duckietown/rl/rewards", episode_reward)
+
             print("about to train agent")
             # Train the agent
             agent.train(replay_buffer, iterations=batch_size, batch_size=batch_size, discount=discount, tau=tau)
-            
-            # save the policy every ten eipsodes in case something crashes
+
+            if episode%25 == 0:
+                agent.noise_std_dev *= agent.noise_decay
+
+            # save the policy every ten episodes in case something crashes
             if episode%10 == 0:
                 print("Episode %10 done, about to save.. : ", episode)
                 agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
@@ -309,6 +340,7 @@ if __name__ == "__main__":
         print("Training done, about to save..")
         agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")
         print("Finished saving..should return now!")
+
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         agent.save(filename="ddpg", directory="/home/alekhyak/gym-duckietown/rl/model")

@@ -16,7 +16,6 @@ env = ResizeWrapper(env)
 env = DiscreteWrapper(env)
 env = NormalizeWrapper(env)
 env = DuckieRewardWrapper(env, 1)
-env.seed(0)
 state_dim = np.prod(env.observation_space.shape)
 action_dim = env.action_space.n
 print("Initializing the DQN agent")
@@ -37,5 +36,3 @@ while True:
         env.render()
     done = False
     obs = env.reset()
-    env.seed(0)
-

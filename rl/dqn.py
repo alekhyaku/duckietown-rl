@@ -28,19 +28,28 @@ class DiscreteWrapper(gym.ActionWrapper):
 
     def __init__(self, env):
         gym.ActionWrapper.__init__(self, env)
-        self.action_space = spaces.Discrete(3)
+        self.action_space = spaces.Discrete(6)
         print(self.action_space)
 
     def action(self, action):
-        # Turn left
+        # Turn left and forward
         if action == 0:
             vels = [0.6, +1.0]
-        # Turn right
+        # Turn right and forward
         elif action == 1:
             vels = [0.6, -1.0]
         # Go forward
         elif action == 2:
             vels = [0.7, 0.0]
+        # Go left
+        elif action == 3:
+            vels = [0.0, 0.5]
+        # Go right
+        elif action == 4:
+            vels = [0.0, -0.5]
+        # brake
+        elif action == 5:
+            vels = [0.0, 0.0]
         else:
             assert False, "unknown action"
         return np.array(vels)
@@ -83,10 +92,15 @@ class DQN(nn.Module):
         return x
 
 class DQNAgent:
-    def __init__(self, num_actions, learning_rate=0.00025, buffer_size=10000):
+    def __init__(self, num_actions, learning_rate=0.00025, buffer_size=10000, target_update=10):
         self.net = DQN(num_actions)
+        self.target_net = DQN(num_actions)
+        self.target_net.load_state_dict(self.net.state_dict())
+        self.target_net.eval()
         self.optimizer = optim.RMSprop(self.net.parameters(), lr=learning_rate)
         self.buffer = ReplayBuffer(buffer_size)
+        self.target_update = target_update
+        self.steps_done = 0
         
     def select_action(self, state, action_dim, epsilon=0.1):
         if random.random() < epsilon:
@@ -96,6 +110,43 @@ class DQNAgent:
             with torch.no_grad():
                 q_values = self.net(state)
             return q_values.max(1)[1].item()
+
+    def update(self, batch_size):
+        if len(self.buffer) < batch_size:
+            return
+        batch = self.buffer.sample(batch_size)
+        # Compute Q values and loss, and update the main network
+        states, actions, rewards, next_states, dones = batch
+
+        # Convert to tensors
+        states = torch.FloatTensor(states)
+        actions = torch.LongTensor(actions)
+        rewards = torch.FloatTensor(rewards)
+        next_states = torch.FloatTensor(next_states)
+        dones = torch.FloatTensor(dones)
+
+        # Compute current Q values
+        current_q_values = self.net(states).gather(1, actions.unsqueeze(-1)).squeeze(-1)
+
+        # Compute next Q values
+        with torch.no_grad():
+            next_q_values = self.target_net(next_states).max(1)[0]
+
+        # Compute target Q values
+        target_q_values = rewards + (1 - dones) * self.gamma * next_q_values
+
+        # Compute loss
+        loss = F.mse_loss(current_q_values, target_q_values.detach())
+
+        # Optimize the model
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        # Update the target network every self.target_update steps
+        self.steps_done += 1
+        if self.steps_done % self.target_update == 0:
+            self.target_net.load_state_dict(self.net.state_dict())
 
     # Add an experience to the replay buffer
     def push_experience(self, state, action, reward, next_state, done):
@@ -116,18 +167,6 @@ class DQNAgent:
         torch.save(self.net.state_dict(), "{}/{}.pth".format(directory, filename))
         print("Saved Actor")
 
-    def predict(self, state):
-        # Convert the state to a PyTorch tensor and add an extra dimension for the batch size
-        state = torch.tensor([state], device=device, dtype=torch.float32)
-        
-        # Pass the state through the network
-        with torch.no_grad():
-            q_values = self.net(state)
-        
-        # Choose the action with the highest Q-value
-        action = torch.argmax(q_values).item()
-        
-        return action
 
     # Sample a batch of experiences from the replay buffer and use them to train the network
     def optimize(self, batch_size):
@@ -144,25 +183,31 @@ class DQNAgent:
 
         # Compute the Q-values for the current states and the next states
         current_q_values = self.net(state).gather(1, action.unsqueeze(1)).squeeze(1)
-        next_q_values = self.net(next_state).max(1)[0]
+        with torch.no_grad():
+            next_q_values = self.target_net(next_state).max(1)[0]
 
-        # Compute the target Q-values
-        target_q_values = reward + 0.99 * next_q_values * (1 - done)
+        # Compute target Q values
+        target_q_values = reward + (1 - done) * self.gamma * next_q_values
 
-        # Compute the loss between the computed Q-values and the target Q-values
+        # Compute loss
         loss = F.mse_loss(current_q_values, target_q_values.detach())
 
-        # Update the network parameters
+        # Optimize the model
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        
+        # Update the target network every self.target_update steps
+        self.steps_done += 1
+        if self.steps_done % self.target_update == 0:
+            self.target_net.load_state_dict(self.net.state_dict())
 
 if __name__ == "__main__":
     # Number of episodes to train for
     num_episodes = 200
 
     # Number of steps to take in each episode
-    num_steps = 500
+    num_steps = 1000
 
     # Batch size for network updates
     batch_size = 8
@@ -172,8 +217,8 @@ if __name__ == "__main__":
     env = ResizeWrapper(env)
     env = DiscreteWrapper(env)
     env = NormalizeWrapper(env)
-    env = DuckieRewardWrapper(env)
-    env.seed(0)
+    env = DuckieRewardWrapper(env, crash_coef=25)
+
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
     agent = DQNAgent(action_dim)
@@ -187,7 +232,6 @@ if __name__ == "__main__":
     try:
         for episode in range(num_episodes):
             state = env.reset()
-            env.seed(0)
             episode_reward = 0
 
             for step in range(num_steps):
@@ -202,6 +246,11 @@ if __name__ == "__main__":
 
                 # Update the network
                 agent.optimize(batch_size)
+
+                # Decay the noise standard deviation every thirty steps
+                if step % 30 == 0:
+                    if env.crash_coef > 1:
+                        env.crash_coef *= .50
 
                 # Update the current state and episode reward
                 state = next_state
@@ -220,6 +269,7 @@ if __name__ == "__main__":
         print("Training done, about to save..")
         agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
         print("Finished saving..should return now!")
+        
     except KeyboardInterrupt:
         print("Training done, about to save..")
         agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
