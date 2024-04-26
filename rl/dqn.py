@@ -92,7 +92,7 @@ class DQN(nn.Module):
         return x
 
 class DQNAgent:
-    def __init__(self, num_actions, learning_rate=0.00025, buffer_size=10000, target_update=10):
+    def __init__(self, num_actions, gamma=0.9, learning_rate=0.00025, buffer_size=10000, target_update=10):
         self.net = DQN(num_actions)
         self.target_net = DQN(num_actions)
         self.target_net.load_state_dict(self.net.state_dict())
@@ -101,6 +101,7 @@ class DQNAgent:
         self.buffer = ReplayBuffer(buffer_size)
         self.target_update = target_update
         self.steps_done = 0
+        self.gamma = gamma
         
     def select_action(self, state, action_dim, epsilon=0.1):
         if random.random() < epsilon:
@@ -204,13 +205,13 @@ class DQNAgent:
 
 if __name__ == "__main__":
     # Number of episodes to train for
-    num_episodes = 200
+    num_episodes = 1000
 
     # Number of steps to take in each episode
     num_steps = 1000
 
     # Batch size for network updates
-    batch_size = 8
+    batch_size = 16
 
     # Initialize the environment and the agent
     env = gym.make("Duckietown-udem1-v0")
@@ -269,7 +270,7 @@ if __name__ == "__main__":
         print("Training done, about to save..")
         agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
         print("Finished saving..should return now!")
-        
+
     except KeyboardInterrupt:
         print("Training done, about to save..")
         agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")
