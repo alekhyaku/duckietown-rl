@@ -30,43 +30,70 @@ class Memory:
         del self.rewards[:]
         del self.is_terminals[:]
 
-class PolicyNetwork(nn.Module):
-    def __init__(self, action_dim):
-        super(PolicyNetwork, self).__init__()
+class ActorCritic(nn.Module):
+    def __init__(self, state_dim, action_dim):
+        super(ActorCritic, self).__init__()
+        self.state_dim = state_dim
+        self.action_dim = action_dim
+
+        # Define the CNN
         self.conv1 = nn.Conv2d(3, 32, kernel_size=8, stride=4)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=4, stride=2)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1)
-        self.fc = nn.Linear(11*16*64, 512)
-        self.out = nn.Linear(512, action_dim)
+
+        # Define the size of the output from the CNN
+        def conv2d_size_out(size, kernel_size, stride):
+            return (size - (kernel_size - 1) - 1) // stride  + 1
+
+        # Adjust these values to match your actual kernel sizes and strides
+        kernel_sizes = [8, 4, 3]
+        strides = [4, 2, 1]
+
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(160, kernel_sizes[0], strides[0]), kernel_sizes[1], strides[1]), kernel_sizes[2], strides[2])
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(120, kernel_sizes[0], strides[0]), kernel_sizes[1], strides[1]), kernel_sizes[2], strides[2])
+
+        linear_input_size = convw * convh * 64
+
+        # Define the fully connected layers
+        self.fc1 = nn.Linear(linear_input_size, 512)
+
+        self.action_layer = nn.Linear(512, action_dim)
+        self.value_layer = nn.Linear(512, 1)
 
     def forward(self, state):
-        if state.dim() == 4:
-            state = state.permute(0, 3, 1, 2)
+        state = state.permute(0, 3, 1, 2)
+        # Pass the input through the CNN
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-        x = x.contiguous().view(x.size(0), -1)  # flatten the tensor
-        print("X: ", x.shape)
-        x = F.relu(self.fc(x))
-        logits = self.out(x)
-        prob = F.softmax(logits, dim=-1)
-        print("Action probability: ,", prob)
-        return F.softmax(logits, dim=-1)
-    
+
+        # print(x.size())
+
+        # Flatten the output from the CNN
+        x = x.contiguous().view(x.size(0), -1)
+
+        # Pass the flattened output through the fully connected layers
+        x = F.relu(self.fc1(x))
+
+        # Compute action probabilities and state values
+        action_probs = F.softmax(self.action_layer(x), dim=-1)
+        state_values = self.value_layer(x)
+
+        return action_probs, state_values
+
     def evaluate(self, state, action):
-        action_probs = self.forward(state)
+        action_probs, state_value = self.forward(state)
         dist = torch.distributions.Categorical(action_probs)
 
-        action_logprobs = dist.log_prob(action)
-        print("Action logprobs", action_logprobs.shape)
+        action_logprobs = dist.log_prob(action.squeeze(-1).long())
         dist_entropy = dist.entropy()
 
-        return action_logprobs, state, torch.squeeze(dist_entropy)
+        return action_logprobs, torch.squeeze(state_value), dist_entropy
 
     def act(self, state, memory):
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
-        probs = self.forward(state)
-        m = torch.distributions.Categorical(probs)
+        action_probs, _ = self.forward(state)  # Unpack the tuple here
+        m = torch.distributions.Categorical(action_probs)  # Pass action_probs instead of probs
         action = m.sample()
 
         memory.states.append(state.squeeze(0))
@@ -83,9 +110,9 @@ class PPO:
         self.eps_clip = eps_clip
         self.K_epochs = K_epochs
         
-        self.policy = PolicyNetwork(action_dim).to(device)
+        self.policy = ActorCritic(state_dim, action_dim).to(device)
         self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=lr, betas=betas)
-        self.policy_old = PolicyNetwork(action_dim).to(device)
+        self.policy_old = ActorCritic(state_dim, action_dim).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         
         self.MseLoss = nn.MSELoss()
@@ -119,17 +146,34 @@ class PPO:
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
             print(logprobs.shape, state_values.shape, dist_entropy.shape)
             print(old_logprobs.shape, old_logprobs)
-            # Finding the ratio (pi_theta / pi_theta__old):
-            ratios = torch.exp(logprobs - old_logprobs.detach())
+            # Suppose old_actions is a tensor of shape [50] containing the actions that were taken
+            # Then you can select the log probabilities of the taken actions as follows:
+            taken_old_logprobs = old_logprobs[torch.arange(len(old_actions)), old_actions]
+
+            # Now taken_old_logprobs should have shape [50], and you can subtract it from logprobs:
+            ratios = torch.exp(logprobs - taken_old_logprobs.detach())
                 
             # Finding Surrogate Loss:
+            # Assuming tensor_a is the tensor with size 50 and tensor_b is the tensor with size 3
+            print("rewards: ", rewards.shape)
+            print("State values: ", state_values.shape)
+            # Convert all tensors to Float
+            ratios = ratios.float()
+            
+            state_values = state_values.float()
+            rewards = rewards.float()
+            dist_entropy = dist_entropy.float()
+
+            # Compute the loss
             advantages = rewards - state_values.detach()
+            advantages = advantages.float()
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
             loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, rewards) - 0.01*dist_entropy
-            
-            # take gradient step
+
+            # Take gradient step
             self.optimizer.zero_grad()
+            loss = loss.float()
             loss.mean().backward()
             self.optimizer.step()
         
@@ -140,7 +184,7 @@ class PPO:
 # Train the model
 def main():
     ############## Hyperparameters ##############
-    env_name = "Duckietown-zigzag_dists"
+    env_name = "Duckietown-udem1-v0"
     env = gym.make(env_name)
     env = ResizeWrapper(env)
     env = DiscreteWrapper(env)
@@ -150,9 +194,9 @@ def main():
     solved_reward = 300         # stop training if avg_reward > solved_reward
     log_interval = 20           # print avg reward in the interval
     max_episodes = 1000        # max training episodes
-    max_timesteps = 1500        # max timesteps in one episode
+    max_timesteps = 1000        # max timesteps in one episode
 
-    update_timestep = 2000      # update policy every n timesteps
+    update_timestep = 50      # update policy every n timesteps
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
     # max_action = float(env.action_space.high[0])
@@ -227,6 +271,11 @@ def main():
                 torch.save(ppo.policy.state_dict(), './PPODiscrete_{}.pth'.format(env_name))
                 break
 
+            if i_episode % 10 == 0:
+                print("Training interrupted, about to save..")
+                torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))
+                print("Finished saving..should return now!")  
+
             # logging
             if i_episode % log_interval == 0:
                 avg_length = int(avg_length/log_interval)
@@ -235,6 +284,9 @@ def main():
                 print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
                 running_reward = 0
                 avg_length = 0
+        print("Training interrupted, about to save..")
+        torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))
+        print("Finished saving..should return now!")
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))

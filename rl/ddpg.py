@@ -23,7 +23,7 @@ class DuckieRewardWrapper(gym.RewardWrapper):
 
     def reward(self, reward):
         if reward == -1000:
-            reward = -25*self.crash_coef
+            reward = -10*self.crash_coef
         elif reward < 0:
             reward *= .25
         return reward

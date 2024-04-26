@@ -178,7 +178,7 @@ class PPO:
 # Train the model
 def main():
     ############## Hyperparameters ##############
-    env_name = "Duckietown-zigzag_dists"
+    env_name = "Duckietown-udem1-v0"
     env = gym.make(env_name)
     env = ResizeWrapper(env)
     env = NormalizeWrapper(env)
@@ -187,9 +187,9 @@ def main():
     solved_reward = 300         # stop training if avg_reward > solved_reward
     log_interval = 20           # print avg reward in the interval
     max_episodes = 1000        # max training episodes
-    max_timesteps = 1500        # max timesteps in one episode
+    max_timesteps = 1000        # max timesteps in one episode
 
-    update_timestep = 2000      # update policy every n timesteps
+    update_timestep = 50      # update policy every n timesteps
     state_dim = np.prod(env.observation_space.shape)
     action_dim = np.prod(env.action_space.shape)
     max_action = float(env.action_space.high[0])
@@ -209,8 +209,8 @@ def main():
     memory = Memory()
     ppo = PPO(state_dim, action_dim, hidden_dim, lr, betas, gamma, K_epochs, eps_clip)
     # load if model exists
-    if os.path.exists('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-zigzag_dists.pth'): 
-        ppo.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-zigzag_dists.pth'))
+    if os.path.exists('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-udem1-v0.pth'): 
+        ppo.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-udem1-v0.pth'))
     print(lr,betas)
 
     # logging variables
@@ -264,6 +264,11 @@ def main():
                 print("########## Solved! ##########")
                 torch.save(ppo.policy.state_dict(), './PPO_{}.pth'.format(env_name))
                 break
+            
+            if i_episode % 10 == 0:
+                print("Training interrupted, about to save..")
+                torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))
+                print("Finished saving..should return now!")
 
             # logging
             if i_episode % log_interval == 0:
@@ -273,6 +278,9 @@ def main():
                 print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
                 running_reward = 0
                 avg_length = 0
+        print("Training interrupted, about to save..")
+        torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))
+        print("Finished saving..should return now!")
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))
