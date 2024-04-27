@@ -24,7 +24,7 @@ class SaveReturn:
 
 saved = SaveReturn("ppo__return.csv")
  # Initialize the environment and the agent
-env = gym.make("Duckietown-zigzag_dists")
+env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)
 env = NormalizeWrapper(env)
 env = DuckieRewardWrapper(env, 1)
@@ -34,7 +34,7 @@ print("Initializing the PPO agent")
 agent = PPO(state_dim, action_dim)
 memory = Memory()
 
-agent.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-zigzag_dists.pth'))
+agent.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-udem1-v0.pth'))
 
 obs = env.reset()
 done = False

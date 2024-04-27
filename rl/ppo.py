@@ -52,8 +52,11 @@ class ActorCritic(nn.Module):
         linear_input_size = convw * convh * 64
 
         # Define the fully connected layers
-        self.fc1 = nn.Linear(linear_input_size, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, num_outputs)
+        self.fc1 = nn.Linear(linear_input_size, 512)
+
+        self.action_layer = nn.Linear(512, num_outputs)
+        self.value_layer = nn.Linear(512, 1)
+
 
         # Add a standard deviation attribute
         self.std = initial_std
@@ -64,6 +67,7 @@ class ActorCritic(nn.Module):
         self.std *= self.decay_factor
 
     def forward(self, x):
+        # print("State: ", x.shape)
         x = x.permute(0, 3, 1, 2)
         # Pass the input through the CNN
         x = F.relu(self.conv1(x))
@@ -77,18 +81,20 @@ class ActorCritic(nn.Module):
 
         # Pass the flattened output through the fully connected layers
         x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        action_probs = self.action_layer(x)
 
         # print(x)
 
         # Apply sigmoid to the first element of x (velocity) and scale by 0.8
-        x[0, 0] = torch.sigmoid(x[0, 0]) * 0.8
+        action_probs[0, 0] = torch.sigmoid(action_probs[0, 0]) * 0.8
 
         # Apply tanh to the second element of x (steering)
-        x[0, 1] = torch.tanh(x[0, 1])
+        action_probs[0, 1] = torch.tanh(action_probs[0, 1])
 
         # x is a single action value
-        mean = x
+        mean = action_probs
+
+        # print("mean: ", mean)
 
         # Use a decaying standard deviation
         std = torch.tensor(self.std)
@@ -96,20 +102,22 @@ class ActorCritic(nn.Module):
         # Create a normal distribution over actions
         dist = torch.distributions.Normal(mean, std)
 
-        return dist
+        state_values = self.value_layer(x)
+
+        return dist, state_values
     
     def act(self, state, memory):
         state = torch.FloatTensor(state).unsqueeze(0)
-        dist = self.forward(state)
+        dist, state_values = self.forward(state)
         # print(dist)
         action = dist.sample()
         action[0, 0] = action[0, 0].clamp(0, 0.8)
         action[0, 1] = action[0, 1].clamp(-1, 1)
         action_logprob = dist.log_prob(action)
-        
-        memory.states.append(state)
-        memory.actions.append(action)
-        memory.logprobs.append(action_logprob)
+        # print("action: shape ", action.shape)
+        memory.states.append(state.squeeze(0))
+        memory.actions.append(action.squeeze(0))
+        memory.logprobs.append(action_logprob.squeeze(0))
 
         # print("action: ", action)
         
@@ -150,19 +158,27 @@ class PPO:
         old_states = torch.stack(memory.states).to(device).detach()
         old_actions = torch.stack(memory.actions).to(device).detach()
         old_logprobs = torch.stack(memory.logprobs).to(device).detach()
-
+        # print("Before loop: ", self.K_epochs)
         # Optimize policy for K epochs:
         for _ in range(int(self.K_epochs)):
+            # print("IN here hehehe")
             # Evaluating old actions and values :
             dist, state_values = self.policy(old_states)
             logprobs = dist.log_prob(old_actions)
             dist_entropy = dist.entropy()
-
+            # print("old log probs shape: ", old_logprobs.shape)
+            # print("logprobs shape: ", logprobs.shape)
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs.detach())
-
+            # print("Ratios shape", ratios.shape)
+            # print("Rewards shape", rewards.shape)
+            # print("State value  shape", state_values.shape)
             # Finding Surrogate Loss:
+            # Reshape rewards to [5, 1]
+            rewards = rewards.view(-1, 1)
             advantages = rewards - state_values.detach()
+            advantages = rewards - state_values.detach()
+            # print("Advantages shape", advantages.shape)
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
             loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, rewards) - 0.01*dist_entropy
@@ -189,7 +205,7 @@ def main():
     max_episodes = 1000        # max training episodes
     max_timesteps = 1000        # max timesteps in one episode
 
-    update_timestep = 50      # update policy every n timesteps
+    update_timestep = 50     # update policy every n timesteps
     state_dim = np.prod(env.observation_space.shape)
     action_dim = np.prod(env.action_space.shape)
     max_action = float(env.action_space.high[0])
@@ -207,7 +223,7 @@ def main():
         env.seed(random_seed)
 
     memory = Memory()
-    ppo = PPO(state_dim, action_dim, hidden_dim, lr, betas, gamma, K_epochs, eps_clip)
+    ppo = PPO(state_dim, action_dim, hidden_dim, lr, betas, gamma, eps_clip, K_epochs)
     # load if model exists
     if os.path.exists('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-udem1-v0.pth'): 
         ppo.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPO_Duckietown-udem1-v0.pth'))
