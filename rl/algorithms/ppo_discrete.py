@@ -260,7 +260,7 @@ def main():
                     break
             
             #save every episode reward to a csv file from a directory
-            with open('/home/alekhyak/gym-duckietown/rl/rewards/ppodiscrete_rewards.csv', 'a') as f:
+            with open('/home/alekhyak/gym-duckietown/rl/train_rewards/ppodiscrete_rewards.csv', 'a') as f:
                 f.write(str(running_reward) + '\n')
             print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
             avg_length += t

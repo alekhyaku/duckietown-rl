@@ -10,19 +10,9 @@ import torch
 from rl.algorithms.ppo import PPO, Memory
 from rl.algorithms.ddpg import DuckieRewardWrapper
 from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
+from test_ppo_discrete import SaveReturn    
 
-class SaveReturn:
-    def __init__(self, filename):
-        self.filename = filename
-        self.data = []
-    def save(self, episode, reward):
-        self.data.append((episode, reward))
-        with open(self.filename, 'w') as f:
-            for episode, reward in self.data:
-                f.write(f"{episode}, {reward}\n")
-
-
-saved = SaveReturn("ppo__return.csv")
+saved = SaveReturn("/rl/test_return/", "ppo__return.csv")
  # Initialize the environment and the agent
 env = gym.make("Duckietown-udem1-v0")
 env = ResizeWrapper(env)

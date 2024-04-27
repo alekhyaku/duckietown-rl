@@ -12,17 +12,18 @@ from rl.algorithms.ddpg import DuckieRewardWrapper
 from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 
 class SaveReturn:
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, directory, filename):
+        self.filename = os.path.join(directory, filename)
         self.data = []
     def save(self, episode, reward):
         self.data.append((episode, reward))
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(self.filename), exist_ok=True)
         with open(self.filename, 'w') as f:
             for episode, reward in self.data:
                 f.write(f"{episode}, {reward}\n")
 
-
-saved = SaveReturn("ppo_discrete_return.csv")
+saved = SaveReturn("/rl/test_return/", "ppo_discrete_return.csv")
  # Initialize the environment and the agent
 env = gym.make("Duckietown-zigzag_dists")
 env = ResizeWrapper(env)

@@ -305,7 +305,7 @@ if __name__ == "__main__":
                 next_state, reward, done, _ = env.step(action)
                 print("reward: ", reward)
                     # Write a new row to the CSV file
-                agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/rewards")
+                agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/train_rewards")
                 replay_buffer.push(state, next_state, action, reward, done)
                 state = next_state
                 
@@ -322,7 +322,7 @@ if __name__ == "__main__":
 
             
             print("Episode reward: ", episode_reward)
-            agent.save_reward("ddpg", "/home/alekhyak/gym-duckietown/rl/rewards", episode_reward)
+            agent.save_reward("ddpg", "/home/alekhyak/gym-duckietown/rl/train_rewards", episode_reward)
 
             print("about to train agent")
             # Train the agent
