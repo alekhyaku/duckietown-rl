@@ -1,12 +1,13 @@
 # A Comparative Analysis of Discrete versus Continuous Action Spaces in  Reinforcement Learning for Autonomous Driving Simulation in Duckietown
 
 ## Introduction
-This Repository uses code from two other open source github repositiories
+This Repository uses source code from two open source github repositiories
 1. Gym-Duckietown
     * [https://github.com/duckietown/gym-duckietown]
 2. AIDO RL baseline
     * [https://github.com/duckietown/challenge-aido_LF-baseline-RL-sim-pytorch]
     * This is used as the baseline to compare our implmentations against, and copied over to the rl/baselines folder
+    * We believe this baseline is created from running the train_reinforcement.py file found
 
 This repository contains code for a final project for a Reinforcement Learning class at UT Austin. All code produced for this project can be found in the rl folder.
 
@@ -30,9 +31,9 @@ Everything was run on an Ubuntu 22.10 VM allocated 11100 MB of memory with 4 pro
 9. pip uninstall pyglet
 10. pip install pyglet==1.5.11
 11. export the python path 
-    * export PYTHONPATH="$/home/user/gym-duckietown/"
+    * export PYTHONPATH="$/home/user/duckietown-rl/"
 
-You can also check your installation against the requirements.txt file in the gym-duckietown/rl folder
+You can also check your installation against the requirements.txt file in the duckietown-rl/rl folder
 
 ## Running Code
 To train our algorithms:
@@ -46,3 +47,4 @@ To test our algorithms
     * There is a test file for every algorithm and to run the baseline test
     * Each test file will create a {name}_return.csv file
     * To visualize the average return for the number of episodes tested, run python3 plot.py
+    * Running the test files again will overwrite the existing returns created for our report
