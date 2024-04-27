@@ -35,7 +35,7 @@ Everything was run on an Ubuntu 22.10 VM allocated 11100 MB of memory with 4 pro
     ```
     pip install torch
     ```
-7. Uninstall and install numpy version 1.22.4
+7. Reinstall numpy version 1.22.4
     ```
     pip uninstall numpy
     pip install numpy==1.22.4
@@ -57,11 +57,21 @@ To train our algorithms:
 1. cd into the rl/algorithms folder
 2. run python3 dqn.py
     * Or ddpg.py, ppo,py, and ppo_dicrete.py
+    ```
+    cd rl/algoritnms
+    python3 dqn.py
+    ```
 To test our algorithms
 1. cd into the rl/testing folder
 2. Make sure there is a .pth file in the /rl/model folder for the algorithm you want to test
 3. Run python3 test_{name}.py
     * There is a test file for every algorithm and to run the baseline test
     * Each test file will create a {name}_return.csv file found in the test_return folder
-    * To visualize the average return for the number of episodes tested, run python3 plot.py
+    * To visualize the average return for the number of episodes tested, run python3 plot.py in the plots folder
     * Running the test files again will overwrite the existing returns created for our report
+    ```
+    cd rl/testing
+    python3 test_dqn.py
+    cd ../plots
+    python3 plot.py
+    ```
