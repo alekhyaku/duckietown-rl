@@ -4,14 +4,13 @@ import torch.optim as optim
 from torch.distributions import Normal
 import torch.nn.functional as F
 import gym
-from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, ActionWrapper, ResizeWrapper
+from learning.utils.wrappers import NormalizeWrapper, ResizeWrapper
 from ddpg import DuckieRewardWrapper
 import numpy as np
 import os
 import os.path
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 class Memory:
     def __init__(self):
@@ -41,8 +40,7 @@ class ActorCritic(nn.Module):
         # Define the size of the output from the CNN
         def conv2d_size_out(size, kernel_size, stride):
             return (size - (kernel_size - 1) - 1) // stride  + 1
-
-        # Adjust these values to match your actual kernel sizes and strides
+        
         kernel_sizes = [8, 4, 3]
         strides = [4, 2, 1]
 
@@ -67,14 +65,11 @@ class ActorCritic(nn.Module):
         self.std *= self.decay_factor
 
     def forward(self, x):
-        # print("State: ", x.shape)
         x = x.permute(0, 3, 1, 2)
         # Pass the input through the CNN
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-
-        # print(x.size())
 
         # Flatten the output from the CNN
         x = x.contiguous().view(x.size(0), -1)
@@ -82,8 +77,6 @@ class ActorCritic(nn.Module):
         # Pass the flattened output through the fully connected layers
         x = F.relu(self.fc1(x))
         action_probs = self.action_layer(x)
-
-        # print(x)
 
         # Apply sigmoid to the first element of x (velocity) and scale by 0.8
         action_probs[0, 0] = torch.sigmoid(action_probs[0, 0]) * 0.8
@@ -93,8 +86,6 @@ class ActorCritic(nn.Module):
 
         # x is a single action value
         mean = action_probs
-
-        # print("mean: ", mean)
 
         # Use a decaying standard deviation
         std = torch.tensor(self.std)
@@ -109,21 +100,16 @@ class ActorCritic(nn.Module):
     def act(self, state, memory):
         state = torch.FloatTensor(state).unsqueeze(0)
         dist, state_values = self.forward(state)
-        # print(dist)
         action = dist.sample()
         action[0, 0] = action[0, 0].clamp(0, 0.8)
         action[0, 1] = action[0, 1].clamp(-1, 1)
         action_logprob = dist.log_prob(action)
-        # print("action: shape ", action.shape)
         memory.states.append(state.squeeze(0))
         memory.actions.append(action.squeeze(0))
         memory.logprobs.append(action_logprob.squeeze(0))
-
-        # print("action: ", action)
         
         return action.cpu().data.numpy().flatten()
 
-# Define the PPO algorithm
 class PPO:
     def __init__(self, num_inputs, num_outputs, hidden_size=256, lr=3e-4, betas=(0.9, 0.999), gamma=0.99, eps_clip=0.2, K_epochs=80):
         self.lr = lr
@@ -158,27 +144,19 @@ class PPO:
         old_states = torch.stack(memory.states).to(device).detach()
         old_actions = torch.stack(memory.actions).to(device).detach()
         old_logprobs = torch.stack(memory.logprobs).to(device).detach()
-        # print("Before loop: ", self.K_epochs)
+        
         # Optimize policy for K epochs:
         for _ in range(int(self.K_epochs)):
-            # print("IN here hehehe")
-            # Evaluating old actions and values :
+            
             dist, state_values = self.policy(old_states)
             logprobs = dist.log_prob(old_actions)
             dist_entropy = dist.entropy()
-            # print("old log probs shape: ", old_logprobs.shape)
-            # print("logprobs shape: ", logprobs.shape)
             # Finding the ratio (pi_theta / pi_theta__old):
             ratios = torch.exp(logprobs - old_logprobs.detach())
-            # print("Ratios shape", ratios.shape)
-            # print("Rewards shape", rewards.shape)
-            # print("State value  shape", state_values.shape)
             # Finding Surrogate Loss:
-            # Reshape rewards to [5, 1]
             rewards = rewards.view(-1, 1)
             advantages = rewards - state_values.detach()
             advantages = rewards - state_values.detach()
-            # print("Advantages shape", advantages.shape)
             surr1 = ratios * advantages
             surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
             loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, rewards) - 0.01*dist_entropy
@@ -191,32 +169,28 @@ class PPO:
         # Copy new weights into old policy:
         self.policy_old.load_state_dict(self.policy.state_dict())
 
-# Train the model
 def main():
-    ############## Hyperparameters ##############
     env_name = "Duckietown-udem1-v0"
     env = gym.make(env_name)
     env = ResizeWrapper(env)
     env = NormalizeWrapper(env)
     env = DuckieRewardWrapper(env, crash_coef=25)
     render = True
-    solved_reward = 300         # stop training if avg_reward > solved_reward
-    log_interval = 20           # print avg reward in the interval
-    max_episodes = 1000        # max training episodes
-    max_timesteps = 1000        # max timesteps in one episode
+    solved_reward = 300         
+    log_interval = 20           
+    max_episodes = 1000        
+    max_timesteps = 1000        
 
-    update_timestep = 50     # update policy every n timesteps
+    update_timestep = 50     
     state_dim = np.prod(env.observation_space.shape)
     action_dim = np.prod(env.action_space.shape)
-    max_action = float(env.action_space.high[0])
     hidden_dim = 256
     lr = 0.0003
     betas = (0.9, 0.999)
-    gamma = 0.99                # discount factor
-    K_epochs = 4                # update policy for K epochs
-    eps_clip = 0.2              # clip parameter for PPO
+    gamma = 0.99                
+    K_epochs = 4                
+    eps_clip = 0.2              
     random_seed = None
-    #############################################
 
     if random_seed:
         torch.manual_seed(random_seed)
@@ -233,20 +207,18 @@ def main():
     running_reward = 0
     avg_length = 0
     timestep = 0
+
+    # catch keyboard interrupts to save the model
     try:
-        # training loop
         for i_episode in range(1, max_episodes+1):
             state = env.reset()
-            # print(state.shape)
-            # print("State: ", state)
             for t in range(max_timesteps):
                 timestep += 1
 
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
-                print("action: ", action)
                 state, reward, done, _ = env.step(action)
-                print("reward: ", reward)
+                
                 # Saving reward and is_terminal:
                 memory.rewards.append(reward)
                 memory.is_terminals.append(done)
@@ -269,6 +241,7 @@ def main():
                     break
                 
             ppo.policy.decay_std()
+
             #save every episode reward to a csv file from a directory
             with open('/home/alekhyak/gym-duckietown/rl/train_rewards/ppo_rewards.csv', 'a') as f:
                 f.write(str(running_reward) + '\n')
@@ -294,9 +267,11 @@ def main():
                 print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
                 running_reward = 0
                 avg_length = 0
+
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))
         print("Finished saving..should return now!")
+        
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))

@@ -2,31 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim import Adam
-from collections import namedtuple, deque
+from collections import deque
 import random
 import numpy as np
-import gym_duckietown
 import gym
 from gym import spaces
-from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, ActionWrapper, ResizeWrapper
-from learning.utils.env import launch_env
+from learning.utils.wrappers import NormalizeWrapper, ActionWrapper, ResizeWrapper
 import os
 import os.path
 import csv
 from gym.spaces import Box
-
-class DuckieRewardWrapper(gym.RewardWrapper):
-    def __init__(self, env, crash_coef):
-        super(DuckieRewardWrapper, self).__init__(env)
-        self.crash_coef = crash_coef
-
-    def reward(self, reward):
-        if reward == -1000:
-            reward = -10*self.crash_coef
-        elif reward < 0:
-            reward *= .25
-        return reward
+from space_wrapper import DuckieRewardWrapper
 
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -50,12 +36,13 @@ class Actor(nn.Module):
     def __init__(self, action_dim, max_action):
         super(Actor, self).__init__()
         self.conv1 = nn.Conv2d(3, 32, kernel_size=8, stride=4)
-        self.bn1 = nn.BatchNorm2d(32)  # Add batch normalization after conv1
+        self.bn1 = nn.BatchNorm2d(32)  
 
         self.conv2 = nn.Conv2d(32, 64, kernel_size=5, stride=2)
-        self.bn2 = nn.BatchNorm2d(64)  # Add batch normalization after conv2
+        self.bn2 = nn.BatchNorm2d(64)  
 
-        self.fc1 = nn.Linear(64 * 13 * 18, 512)  # updated input size
+        # calculated for state image size (120, 160, 3)
+        self.fc1 = nn.Linear(64 * 13 * 18, 512)  
 
         self.fc2 = nn.Linear(512, action_dim)
 
@@ -175,12 +162,6 @@ class DDPG(object):
             print("Action in select action: ", action)
         return action
     
-    def predict(self, state):
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        with torch.no_grad():
-            action = self.actor(state).cpu().data.numpy().flatten()
-        return action
-    
     def save_reward(save, filename, directory, reward):
         with open("{}/{}.csv".format(directory, filename), "a") as f:
             writer = csv.writer(f)
@@ -256,7 +237,6 @@ class DDPG(object):
 if __name__ == "__main__":
     # Initialize the Duckietown environment
     env = gym.make("Duckietown-zigzag_dists")
-    # env = launch_env()
     env = ResizeWrapper(env)
     env = NormalizeWrapper(env)
     env = ActionWrapper(env)
@@ -297,29 +277,29 @@ if __name__ == "__main__":
             done = False
             episode_reward = 0
             for steps in range(num_steps):
-                # if episode < num_rand_episodes:
-                #     action = agent.select_action(state, True)
-                # else:
-                action = agent.select_action(state, False)
-                # print("Action in episode step ", steps, " : ", action)
-                next_state, reward, done, _ = env.step(action)
-                print("reward: ", reward)
+                # random exploration for the first 20 episodes
+                # should comment this out if loading an agent
+                if episode < num_rand_episodes:
+                    action = agent.select_action(state, True)
+                else:
+                    action = agent.select_action(state, False)
+                    next_state, reward, done, _ = env.step(action)
+                    print("reward: ", reward)
                     # Write a new row to the CSV file
-                agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/train_rewards")
-                replay_buffer.push(state, next_state, action, reward, done)
-                state = next_state
-                
-                # Decay the noise standard deviation every thirty steps
-                if steps % 30 == 0:
-                    if env.crash_coef > 1:
-                        env.crash_coef *= .50
+                    agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/train_rewards")
+                    replay_buffer.push(state, next_state, action, reward, done)
+                    state = next_state
+                    
+                    # Decay the crash coef every thirty steps
+                    if steps % 30 == 0:
+                        if env.crash_coef > 1:
+                            env.crash_coef *= .50
 
-                episode_reward += reward
-                
-                env.render()
-                if done:
-                    break
-
+                    episode_reward += reward
+                    
+                    env.render()
+                    if done:
+                        break
             
             print("Episode reward: ", episode_reward)
             agent.save_reward("ddpg", "/home/alekhyak/gym-duckietown/rl/train_rewards", episode_reward)

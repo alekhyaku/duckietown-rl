@@ -2,11 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-from torch.optim import Adam
-from collections import namedtuple, deque
+from collections import deque
 import random
 import numpy as np
-import gym_duckietown
 import gym
 from collections import deque
 import random
@@ -15,44 +13,9 @@ from gym import spaces
 import os
 import os.path
 import csv
-from ddpg import DuckieRewardWrapper
+from space_wrapper import DuckieRewardWrapper, DiscreteWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-
-class DiscreteWrapper(gym.ActionWrapper):
-    """
-    Duckietown environment with discrete actions (left, right, forward)
-    instead of continuous control
-    """
-
-    def __init__(self, env):
-        gym.ActionWrapper.__init__(self, env)
-        self.action_space = spaces.Discrete(6)
-        print(self.action_space)
-
-    def action(self, action):
-        # Turn left and forward
-        if action == 0:
-            vels = [0.6, +1.0]
-        # Turn right and forward
-        elif action == 1:
-            vels = [0.6, -1.0]
-        # Go forward
-        elif action == 2:
-            vels = [0.7, 0.0]
-        # Go left
-        elif action == 3:
-            vels = [0.0, 0.5]
-        # Go right
-        elif action == 4:
-            vels = [0.0, -0.5]
-        # brake
-        elif action == 5:
-            vels = [0.0, 0.0]
-        else:
-            assert False, "unknown action"
-        return np.array(vels)
 
 class ReplayBuffer:
     def __init__(self, capacity):
@@ -82,7 +45,6 @@ class DQN(nn.Module):
 
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
-        x = x.float() / 255.0  # Normalize the input images
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
@@ -204,13 +166,9 @@ class DQNAgent:
             self.target_net.load_state_dict(self.net.state_dict())
 
 if __name__ == "__main__":
-    # Number of episodes to train for
+
     num_episodes = 1000
-
-    # Number of steps to take in each episode
     num_steps = 1000
-
-    # Batch size for network updates
     batch_size = 16
 
     # Initialize the environment and the agent
@@ -262,6 +220,7 @@ if __name__ == "__main__":
 
             print(f"Episode {episode}: {episode_reward}")
             agent.save_reward("dqn", "/home/alekhyak/gym-duckietown/rl/train_rewards", episode_reward)
+            
             if episode % 10 == 0:
                 print("10 episodes done, saving model")
                 agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")

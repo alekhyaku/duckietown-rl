@@ -10,7 +10,7 @@ from ddpg import DuckieRewardWrapper
 import numpy as np
 import os
 import os.path
-from dqn import DiscreteWrapper
+from space_wrapper import DiscreteWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -44,8 +44,7 @@ class ActorCritic(nn.Module):
         # Define the size of the output from the CNN
         def conv2d_size_out(size, kernel_size, stride):
             return (size - (kernel_size - 1) - 1) // stride  + 1
-
-        # Adjust these values to match your actual kernel sizes and strides
+        
         kernel_sizes = [8, 4, 3]
         strides = [4, 2, 1]
 
@@ -66,8 +65,6 @@ class ActorCritic(nn.Module):
         x = F.relu(self.conv1(state))
         x = F.relu(self.conv2(x))
         x = F.relu(self.conv3(x))
-
-        # print(x.size())
 
         # Flatten the output from the CNN
         x = x.contiguous().view(x.size(0), -1)
@@ -92,8 +89,8 @@ class ActorCritic(nn.Module):
 
     def act(self, state, memory):
         state = torch.from_numpy(state).float().unsqueeze(0).to(device)
-        action_probs, _ = self.forward(state)  # Unpack the tuple here
-        m = torch.distributions.Categorical(action_probs)  # Pass action_probs instead of probs
+        action_probs, _ = self.forward(state)  
+        m = torch.distributions.Categorical(action_probs)  
         action = m.sample()
 
         memory.states.append(state.squeeze(0))
@@ -134,32 +131,21 @@ class PPO:
         # Converting list to tensor
         old_states = torch.stack(memory.states).to(device).detach()
         old_actions = torch.stack(memory.actions).to(device).detach()
-        # Convert Categorical objects to Tensor objects
         tensor_logprobs = [torch.tensor(logprob.probs) for logprob in memory.logprobs]
-        print(old_states.shape, old_actions.shape, len(tensor_logprobs))
-        # Then stack them
         old_logprobs = torch.stack(tensor_logprobs).to(device).detach().squeeze(1)
         
         # Optimize policy for K epochs:
         for _ in range(self.K_epochs):
             # Evaluating old actions and values :
             logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions)
-            print(logprobs.shape, state_values.shape, dist_entropy.shape)
-            print(old_logprobs.shape, old_logprobs)
-            # Suppose old_actions is a tensor of shape [50] containing the actions that were taken
-            # Then you can select the log probabilities of the taken actions as follows:
             taken_old_logprobs = old_logprobs[torch.arange(len(old_actions)), old_actions]
 
             # Now taken_old_logprobs should have shape [50], and you can subtract it from logprobs:
             ratios = torch.exp(logprobs - taken_old_logprobs.detach())
                 
             # Finding Surrogate Loss:
-            # Assuming tensor_a is the tensor with size 50 and tensor_b is the tensor with size 3
-            print("rewards: ", rewards.shape)
-            print("State values: ", state_values.shape)
             # Convert all tensors to Float
             ratios = ratios.float()
-            
             state_values = state_values.float()
             rewards = rewards.float()
             dist_entropy = dist_entropy.float()
@@ -191,21 +177,16 @@ def main():
     env = NormalizeWrapper(env)
     env = DuckieRewardWrapper(env, crash_coef=25)
     render = True
-    solved_reward = 300         # stop training if avg_reward > solved_reward
-    log_interval = 20           # print avg reward in the interval
-    max_episodes = 1000        # max training episodes
-    max_timesteps = 1000        # max timesteps in one episode
+    solved_reward = 300         
+    log_interval = 20          
+    max_episodes = 1000        
+    max_timesteps = 1000        
 
-    update_timestep = 50      # update policy every n timesteps
+    update_timestep = 50      
     state_dim = np.prod(env.observation_space.shape)
     action_dim = env.action_space.n
-    # max_action = float(env.action_space.high[0])
-    hidden_dim = 256
     lr = 0.0003
     betas = (0.9, 0.999)
-    gamma = 0.99                # discount factor
-    K_epochs = 4                # update policy for K epochs
-    eps_clip = 0.2              # clip parameter for PPO
     random_seed = None
     #############################################
 
@@ -215,6 +196,7 @@ def main():
 
     memory = Memory()
     ppo = PPO(state_dim, action_dim, n_latent_var=64, lr=0.002, betas=(0.9, 0.999), gamma=0.99, K_epochs=4, eps_clip=0.2)
+
     # load if model exists
     if os.path.exists('/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_Duckietown-udem1-v0.pth'): 
         ppo.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_Duckietown-udem1-v0.pth'))
@@ -224,20 +206,18 @@ def main():
     running_reward = 0
     avg_length = 0
     timestep = 0
+
+    # catch keyboard interrupts to save model
     try:
         # training loop
         for i_episode in range(1, max_episodes+1):
             state = env.reset()
-            # print(state.shape)
-            # print("State: ", state)
             for t in range(max_timesteps):
                 timestep += 1
-
                 # Running policy_old:
                 action = ppo.policy_old.act(state, memory)
-                print("action: ", action)
                 state, reward, done, _ = env.step(action)
-                print("reward: ", reward)
+
                 # Saving reward and is_terminal:
                 memory.rewards.append(reward)
                 memory.is_terminals.append(done)
@@ -248,7 +228,7 @@ def main():
                     memory.clear_memory()
                     timestep = 0
 
-                # Decay the noise standard deviation every thirty steps
+                # Decay the crash coef every thirty steps
                 if timestep % 30 == 0:
                     if env.crash_coef > 1:
                         env.crash_coef *= .50
@@ -259,7 +239,7 @@ def main():
                 if done:
                     break
             
-            #save every episode reward to a csv file from a directory
+            # save every episode reward to a csv file from a directory
             with open('/home/alekhyak/gym-duckietown/rl/train_rewards/ppodiscrete_rewards.csv', 'a') as f:
                 f.write(str(running_reward) + '\n')
             print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
@@ -270,7 +250,8 @@ def main():
                 print("########## Solved! ##########")
                 torch.save(ppo.policy.state_dict(), './PPODiscrete_{}.pth'.format(env_name))
                 break
-
+            
+            # save the policy every 10 episodes in case of a crash
             if i_episode % 10 == 0:
                 print("Training interrupted, about to save..")
                 torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))
@@ -284,9 +265,11 @@ def main():
                 print('Episode {} \t avg length: {} \t reward: {}'.format(i_episode, avg_length, running_reward))
                 running_reward = 0
                 avg_length = 0
+
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))
         print("Finished saving..should return now!")
+        
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_{}.pth'.format(env_name))
