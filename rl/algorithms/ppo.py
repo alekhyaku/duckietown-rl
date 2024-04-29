@@ -5,7 +5,7 @@ from torch.distributions import Normal
 import torch.nn.functional as F
 import gym
 from learning.utils.wrappers import NormalizeWrapper, ResizeWrapper
-from ddpg import DuckieRewardWrapper
+from rl.algorithms.space_wrapper import DuckieRewardWrapper
 import numpy as np
 import os
 import os.path
@@ -271,7 +271,7 @@ def main():
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))
         print("Finished saving..should return now!")
-        
+
     except KeyboardInterrupt:
         print("Training interrupted, about to save..")
         torch.save(ppo.policy.state_dict(), '/home/alekhyak/gym-duckietown/rl/model/PPO_{}.pth'.format(env_name))

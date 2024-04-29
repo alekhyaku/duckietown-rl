@@ -8,7 +8,7 @@ from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 from save_return import SaveReturn
 
 def run_dqn(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
-    saved = SaveReturn("/rl/test_return/", f"dqn_{env_name}_seed{seed}_return.csv")
+    saved = SaveReturn("/home/alekhyak/gym-duckietown/rl/test_return/", f"dqn_{env_name}_seed{seed}_return.csv")
     # Initialize the environment and the agent
     env = gym.make(env_name)
     env.seed(seed)
@@ -32,7 +32,7 @@ def run_dqn(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
         total_reward = 0
         steps = 0
         while not done:
-            action = agent.predict(obs)
+            action = agent.select_action(obs, action_dim)
             # Perform action
             obs, reward, done, _ = env.step(action)
             # record the reward for the episode

@@ -8,7 +8,7 @@ from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 from save_return import SaveReturn
 
 def run_ddpg(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
-    saved = SaveReturn("/rl/test_return/", f"ddpg_{env_name}_seed{seed}_return.csv")
+    saved = SaveReturn("/home/alekhyak/gym-duckietown/rl/test_return/", f"ddpg_{env_name}_seed{seed}_return.csv")
     # Initialize the Duckietown environment
     env = gym.make(env_name)
     env.seed(seed)
@@ -36,7 +36,7 @@ def run_ddpg(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
         while not done:
             action = agent.select_action(obs, False)
             # Perform action
-            print("action: ", action)
+            # print("action: ", action)
             obs, reward, done, _ = env.step(action)
             # record the reward for the episode
             total_reward += reward

@@ -13,7 +13,7 @@ from gym import spaces
 import os
 import os.path
 import csv
-from space_wrapper import DuckieRewardWrapper, DiscreteWrapper
+from rl.algorithms.space_wrapper import DuckieRewardWrapper, DiscreteWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
 
             print(f"Episode {episode}: {episode_reward}")
             agent.save_reward("dqn", "/home/alekhyak/gym-duckietown/rl/train_rewards", episode_reward)
-            
+
             if episode % 10 == 0:
                 print("10 episodes done, saving model")
                 agent.save(filename="dqn", directory="/home/alekhyak/gym-duckietown/rl/model")

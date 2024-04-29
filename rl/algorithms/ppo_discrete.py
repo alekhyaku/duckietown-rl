@@ -5,12 +5,11 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.distributions import Categorical
 import gym
-from learning.utils.wrappers import NormalizeWrapper, ImgWrapper, ActionWrapper, ResizeWrapper
-from ddpg import DuckieRewardWrapper
+from learning.utils.wrappers import NormalizeWrapper, ResizeWrapper
+from rl.algorithms.space_wrapper import DuckieRewardWrapper, DiscreteWrapper
 import numpy as np
 import os
 import os.path
-from space_wrapper import DiscreteWrapper
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -169,7 +168,6 @@ class PPO:
 
 # Train the model
 def main():
-    ############## Hyperparameters ##############
     env_name = "Duckietown-udem1-v0"
     env = gym.make(env_name)
     env = ResizeWrapper(env)
@@ -188,7 +186,6 @@ def main():
     lr = 0.0003
     betas = (0.9, 0.999)
     random_seed = None
-    #############################################
 
     if random_seed:
         torch.manual_seed(random_seed)

@@ -2,28 +2,26 @@ import gym
 import numpy as np
 
 # Assuming the baseline was created by the ddpg agent created by gym-duckietown
-from learning.reinforcement.pytorch.ddpg import DDPG
+from rl.baseline.ddpg import DDPG
+from rl.baseline.gym_wrapper import DTPytorchWrapper
 from rl.algorithms.space_wrapper import DuckieRewardWrapper
-from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
+from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper, ImgWrapper, ActionWrapper
 from save_return import SaveReturn
 
 def run_baseline(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
-    saved = SaveReturn("/rl/test_return/", f"baseline_{env_name}_seed{seed}_return.csv")
+    saved = SaveReturn("/home/alekhyak/gym-duckietown/rl/test_return/", f"baseline_{env_name}_seed{seed}_return.csv")
     # Initialize the Duckietown environment
-    # Using the same wrappers and reward function as our DDPG agent for fairness
+    # Using the same reward function as our DDPG agent for fairness
     env = gym.make(env_name)
     env.seed(seed)
-    env = ResizeWrapper(env)
-    env = NormalizeWrapper(env)
+    image_processor = DTPytorchWrapper()
     crash_coef = 25
     env = DuckieRewardWrapper(env, crash_coef)
 
-    # Initialize the DDPG agent
-    state_dim = np.prod(env.observation_space.shape)
-    action_dim = np.prod(env.action_space.shape)
-    max_action = float(env.action_space.high[0])
-    policy = DDPG(state_dim, action_dim, max_action, net_type="cnn")
-    policy.load(filename="model", directory="/rl/baseline/")
+    # Initialize policy
+    policy = DDPG(state_dim=image_processor.shape, action_dim=2, max_action=1, net_type="cnn")
+    policy.current_image = np.zeros((640, 480, 3))
+    policy.load(filename="model", directory="/home/alekhyak/gym-duckietown/rl/baseline/")
     obs = env.reset()
     done = False
     episode_num = 0
@@ -32,9 +30,8 @@ def run_baseline(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
         total_reward = 0
         steps = 0
         while not done:
-            action = policy.predict(obs, False)
+            action = policy.predict(image_processor.preprocess(obs))
             # Perform action
-            print("action: ", action)
             obs, reward, done, _ = env.step(action)
             # record the reward for the episode
             total_reward += reward

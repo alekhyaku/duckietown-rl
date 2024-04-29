@@ -12,7 +12,7 @@ import os
 import os.path
 import csv
 from gym.spaces import Box
-from space_wrapper import DuckieRewardWrapper
+from rl.algorithms.space_wrapper import DuckieRewardWrapper
 
 # Define the device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -149,7 +149,7 @@ class DDPG(object):
             action= self.actor(state).cpu().data.numpy().flatten()
             # Add noise to the action
             noise = np.random.normal(0, self.noise_std_dev, size=action.shape)
-            print("Noise: ", noise)
+            # print("Noise: ", noise)
             action = action + noise
 
             #define low and high for each part of our action space
@@ -159,7 +159,7 @@ class DDPG(object):
             # Clip the action to be within the valid range
             action = np.clip(action, action_space_low, action_space_high)
 
-            print("Action in select action: ", action)
+            # print("Action in select action: ", action)
         return action
     
     def save_reward(save, filename, directory, reward):
@@ -272,7 +272,7 @@ if __name__ == "__main__":
         # Training loop
         for episode in range(num_episodes):
             env.crash_coef = 25
-            print("Episode ", episode)
+            # print("Episode ", episode)
             state = env.reset()
             done = False
             episode_reward = 0
@@ -284,7 +284,7 @@ if __name__ == "__main__":
                 else:
                     action = agent.select_action(state, False)
                     next_state, reward, done, _ = env.step(action)
-                    print("reward: ", reward)
+                    # print("reward: ", reward)
                     # Write a new row to the CSV file
                     agent.save_all(episode, steps, action, reward, "ddpg_all", "/home/alekhyak/gym-duckietown/rl/train_rewards")
                     replay_buffer.push(state, next_state, action, reward, done)

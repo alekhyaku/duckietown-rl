@@ -9,7 +9,7 @@ from learning.utils.wrappers import  ResizeWrapper, NormalizeWrapper
 from save_return import SaveReturn
 
 def run_ppo(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
-    saved = SaveReturn("/rl/test_return/", f"ppo{env_name}_seed{seed}__return.csv")
+    saved = SaveReturn("/home/alekhyak/gym-duckietown/rl/test_return/", f"ppo{env_name}_seed{seed}__return.csv")
     # Initialize the environment and the agent
     env = gym.make(env_name)
     env.seed(seed)

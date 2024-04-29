@@ -66,12 +66,14 @@ To test our algorithms
 2. Make sure there is a .pth file in the /rl/model folder for the algorithm you want to test
 3. Run python3 test_{name}.py
     * There is a test file for every algorithm and to run the baseline test
-    * Each test file will create a {name}_return.csv file found in the test_return folder
-    * To visualize the average return for the number of episodes tested, run python3 plot.py in the plots folder
+    * Each test file will create a {algorithm}_{map}_seed{seed}_return.csv file found in the test_return folder
+    * To test all run the test_all file
+    * To visualize the average return for the number of episodes tested for all tests, run python3 plot.py in the plots folder
     * Running the test files again will overwrite the existing returns created for our report
     ```
     cd rl/testing
     python3 test_dqn.py
+    python3 test_all.py
     cd ../plots
     python3 plot.py
     ```

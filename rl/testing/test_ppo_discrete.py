@@ -2,7 +2,7 @@ import ast
 import argparse
 import logging
 import gym
-import os
+import torch
 import numpy as np
 
 # Duckietown Specific
@@ -12,7 +12,7 @@ from learning.utils.wrappers import ResizeWrapper, NormalizeWrapper
 from save_return import SaveReturn
 
 def run_ppo_discrete(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=100):
-    saved = SaveReturn("/rl/test_return/", f"ppo{env_name}_seed{seed}_discrete_return.csv")
+    saved = SaveReturn("/home/alekhyak/gym-duckietown/rl/test_return/", f"ppo{env_name}_seed{seed}_discrete_return.csv")
     # Initialize the environment and the agent
     env = gym.make(env_name)
     env.seed(seed)
@@ -26,7 +26,7 @@ def run_ppo_discrete(env_name="Duckietown-udem1-v0", seed=0, max_episode_steps=1
     agent = PPO(state_dim, action_dim,n_latent_var=64, lr=0.002, betas=(0.9, 0.999), gamma=0.99, K_epochs=4, eps_clip=0.2)
     memory = Memory()
     # load if model exists
-    agent.policy.load(filename="PPODiscrete_Duckietown-udem1-v0", directory="/home/alekhyak/gym-duckietown/rl/model/")
+    agent.policy.load_state_dict(torch.load('/home/alekhyak/gym-duckietown/rl/model/PPODiscrete_Duckietown-udem1-v0.pth'))
 
     obs = env.reset()
     done = False
