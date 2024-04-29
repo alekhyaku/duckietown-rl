@@ -4,6 +4,8 @@ import numpy as np
 from gym import spaces
 from PIL import Image
 
+# Code from: https://github.com/duckietown/challenge-aido_LF-baseline-RL-sim-pytorch
+
 __all__ = [
     "ResizeWrapper",
     "NormalizeWrapper",
