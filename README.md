@@ -6,14 +6,14 @@ This Repository uses source code from two open source github repositiories
     * [https://github.com/duckietown/gym-duckietown]
 2. AIDO RL baseline
     * [https://github.com/duckietown/challenge-aido_LF-baseline-RL-sim-pytorch]
-    * This is used as the baseline to compare our implmentations against, and copied over to the rl/baselines folder
-    * We believe this baseline is created from running the train_reinforcement.py file found in the gym-duckietown/learning/reinforcement/pytorch folder from Gym-Duckietown
+    * This is used as the baseline to compare our implementations against, and copied over to the rl/baselines folder
+    * We believe this baseline is created from the model.py file in this repository
 
 This repository contains code for a final project for a Reinforcement Learning class at UT Austin. All code produced for this project can be found in the rl folder.
 
 We tried to implement Deep Reinforcement Learning algorithms to solve in lane following problem in the Duckietown simulator. We trained three algorithms DDPG, DQN, and PPO but used both a discrete and continuous action space for PPO.
 
-Our goal was to compare how defining the action space can either hinder or help solve the lane following problem. We used CNN's for image processing, and kept the same reward function and state space to train all 4. 
+Our goal was to compare how defining the action space can affect performance when solving the lane following problem. We used CNN's for image processing, and kept the same reward function and state space to train all 4. 
 
 ## Installation
 In order to generate reproducible results, this is the installation process we underwent in order to get gym-duckietown running, as well as to test our algorithms.
@@ -53,7 +53,7 @@ Everything was run on an Ubuntu 22.10 VM allocated 11100 MB of memory with 4 pro
 You can also check your installation against the requirements.txt file in the duckietown-rl/rl folder
 
 ## Running Code
-To train our algorithms:
+### To train our algorithms:
 1. cd into the rl/algorithms folder
 2. run python3 dqn.py
     * Or ddpg.py, ppo,py, and ppo_dicrete.py
@@ -61,7 +61,8 @@ To train our algorithms:
     cd rl/algoritnms
     python3 dqn.py
     ```
-To test our algorithms
+### To test our algorithms
+*** The file paths will have to be changed in each test file for local installations of the repository ***
 1. cd into the rl/testing folder
 2. Make sure there is a .pth file in the /rl/model folder for the algorithm you want to test
 3. Run python3 test_{name}.py
